@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData, saveData, genId } from '@/lib/store';
-import type { ProjectCategory, ProjectStatus, Priority, Allocation } from '@/lib/types';
+import type { ProjectCategory, ProjectStatus, Priority, Allocation, Phase } from '@/lib/types';
+import { getTemplateForCategory } from '@/lib/templates';
+import TemplatePreview from '@/components/TemplatePreview';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,10 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CalendarIcon, ArrowLeft, Plus, X } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, addWeeks } from 'date-fns';
 import { cn } from '@/lib/utils';
 
-const categories: ProjectCategory[] = ['Strategy', 'Research', 'Innovation Ecosystem', 'Quantum/Deep Tech', 'Scaleup Support', 'Other'];
+const categories: ProjectCategory[] = ['Strategy', 'Research', 'Innovation Ecosystem', 'Quantum/Deep Tech', 'Scaleup Support', 'Report', 'Event', 'Scouting', 'Other'];
 const priorities: Priority[] = ['High', 'Medium', 'Low'];
 const statuses: ProjectStatus[] = ['Active', 'On Hold', 'Completed'];
 
@@ -23,6 +25,12 @@ interface TeamAllocation {
   ftePercent: number;
   agreedMonthlyHours: number;
   billableHourlyRate: number;
+}
+
+interface PhaseEntry {
+  name: string;
+  durationWeeks: number;
+  ftePercent: number;
 }
 
 export default function NewProject() {
@@ -39,6 +47,32 @@ export default function NewProject() {
   const [endDate, setEndDate] = useState<Date | undefined>();
   const [monthlyFee, setMonthlyFee] = useState('');
   const [allocations, setAllocations] = useState<TeamAllocation[]>([]);
+  const [phaseEntries, setPhaseEntries] = useState<PhaseEntry[]>([]);
+
+  const template = getTemplateForCategory(category);
+
+  // Auto-fill when category changes to a templated one
+  useEffect(() => {
+    if (template) {
+      setPhaseEntries(template.phases.map(p => ({ ...p })));
+      if (startDate) {
+        setEndDate(addWeeks(startDate, template.timelineWeeks));
+      } else {
+        const today = new Date();
+        setStartDate(today);
+        setEndDate(addWeeks(today, template.timelineWeeks));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category]);
+
+  // Update end date when start date changes if template is active
+  useEffect(() => {
+    if (template && startDate) {
+      setEndDate(addWeeks(startDate, template.timelineWeeks));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate]);
 
   if (!isManagerOrAbove) {
     navigate('/');
@@ -72,6 +106,24 @@ export default function NewProject() {
     setAllocations(allocations.filter((_, i) => i !== idx));
   };
 
+  const updatePhaseEntry = (idx: number, field: keyof PhaseEntry, value: string | number) => {
+    const updated = [...phaseEntries];
+    if (field === 'name') {
+      updated[idx] = { ...updated[idx], name: value as string };
+    } else {
+      updated[idx] = { ...updated[idx], [field]: Number(value) };
+    }
+    setPhaseEntries(updated);
+  };
+
+  const addPhaseEntry = () => {
+    setPhaseEntries([...phaseEntries, { name: '', durationWeeks: 1, ftePercent: 50 }]);
+  };
+
+  const removePhaseEntry = (idx: number) => {
+    setPhaseEntries(phaseEntries.filter((_, i) => i !== idx));
+  };
+
   const handleSubmit = () => {
     if (!name || !client || !startDate || !endDate || !monthlyFee) return;
 
@@ -98,9 +150,17 @@ export default function NewProject() {
       billableHourlyRate: a.billableHourlyRate,
     }));
 
+    const newPhases: Phase[] = phaseEntries.map((p, i) => ({
+      id: genId(),
+      projectId,
+      name: p.name,
+      order: i,
+    }));
+
     const current = loadData();
     current.projects.push(newProject);
     current.allocations.push(...newAllocations);
+    current.phases.push(...newPhases);
     saveData(current);
 
     navigate(`/projects/${projectId}`);
@@ -181,7 +241,7 @@ export default function NewProject() {
               </Popover>
             </div>
             <div className="space-y-2">
-              <Label>End Date *</Label>
+              <Label>End Date *{template ? ' (auto)' : ''}</Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !endDate && "text-muted-foreground")}>
@@ -199,6 +259,43 @@ export default function NewProject() {
               <Input type="number" value={monthlyFee} onChange={e => setMonthlyFee(e.target.value)} placeholder="e.g. 30000" />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Template Preview */}
+      {template && <TemplatePreview template={template} />}
+
+      {/* Phases */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-lg">Phases</CardTitle>
+          <Button variant="outline" size="sm" onClick={addPhaseEntry}>
+            <Plus className="h-4 w-4 mr-1" /> Add Phase
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {phaseEntries.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">No phases defined. Select a templated category or add manually.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-[1fr_100px_100px_40px] gap-3 text-xs font-medium text-muted-foreground px-1">
+                <span>Phase Name</span>
+                <span>Duration (wks)</span>
+                <span>FTE %</span>
+                <span />
+              </div>
+              {phaseEntries.map((phase, idx) => (
+                <div key={idx} className="grid grid-cols-[1fr_100px_100px_40px] gap-3 items-center">
+                  <Input value={phase.name} onChange={e => updatePhaseEntry(idx, 'name', e.target.value)} placeholder="Phase name" />
+                  <Input type="number" min={0.5} step={0.5} value={phase.durationWeeks} onChange={e => updatePhaseEntry(idx, 'durationWeeks', e.target.value)} />
+                  <Input type="number" min={0} max={100} value={phase.ftePercent} onChange={e => updatePhaseEntry(idx, 'ftePercent', e.target.value)} />
+                  <Button variant="ghost" size="icon" onClick={() => removePhaseEntry(idx)}>
+                    <X className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

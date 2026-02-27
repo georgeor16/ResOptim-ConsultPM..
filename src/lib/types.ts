@@ -2,7 +2,7 @@
 
 export type Role = 'admin' | 'manager' | 'member';
 
-export type ProjectCategory = 'Strategy' | 'Research' | 'Innovation Ecosystem' | 'Quantum/Deep Tech' | 'Scaleup Support' | 'Other';
+export type ProjectCategory = 'Strategy' | 'Research' | 'Innovation Ecosystem' | 'Quantum/Deep Tech' | 'Scaleup Support' | 'Report' | 'Event' | 'Scouting' | 'Other';
 export type ProjectStatus = 'Active' | 'On Hold' | 'Completed';
 export type Priority = 'High' | 'Medium' | 'Low';
 export type TaskStatus = 'To Do' | 'In Progress' | 'Blocked' | 'Done';
