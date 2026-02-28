@@ -320,6 +320,8 @@ export default function ProjectDetail() {
                       <Label>Assignees</Label>
                       <MultiSelectAssignee
                         users={allocations.map(a => data.users.find(u => u.id === a.userId)!).filter(Boolean)}
+                        allUsers={data.users}
+                        allocations={data.allocations.filter(a => data.projects.some(p => p.status === 'Active' && p.id === a.projectId))}
                         selectedIds={newTask.assigneeIds}
                         onChange={ids => setNewTask(t => ({ ...t, assigneeIds: ids }))}
                       />
@@ -478,6 +480,8 @@ export default function ProjectDetail() {
                   <Label>Assignees</Label>
                   <MultiSelectAssignee
                     users={allocations.map(a => data.users.find(u => u.id === a.userId)!).filter(Boolean)}
+                    allUsers={data.users}
+                    allocations={data.allocations.filter(a => data.projects.some(p => p.status === 'Active' && p.id === a.projectId))}
                     selectedIds={editingTask.assigneeIds}
                     onChange={ids => setEditingTask(t => t ? { ...t, assigneeIds: ids } : t)}
                   />
