@@ -46,14 +46,14 @@ export function createSeedData(): AppData {
   ];
 
   const tasks = [
-    { id: genId(), projectId: project1Id, phaseId: p1Phase1, title: 'Stakeholder interviews', description: 'Interview 8 key stakeholders', assigneeId: users[1].id, status: 'Done' as const, estimatedHours: 16, startDate: '2026-01-15', dueDate: '2026-02-01', order: 0 },
-    { id: genId(), projectId: project1Id, phaseId: p1Phase1, title: 'Technology landscape review', description: 'Map current quantum computing landscape', assigneeId: users[4].id, status: 'In Progress' as const, estimatedHours: 24, startDate: '2026-01-20', dueDate: '2026-02-15', order: 1 },
-    { id: genId(), projectId: project1Id, phaseId: p1Phase2, title: 'Gap analysis report', description: 'Identify capability gaps', assigneeId: users[4].id, status: 'To Do' as const, estimatedHours: 32, startDate: '2026-02-15', dueDate: '2026-03-15', order: 0 },
-    { id: genId(), projectId: project1Id, phaseId: p1Phase2, title: 'Strategic recommendations', description: 'Draft strategic roadmap', assigneeId: users[0].id, status: 'To Do' as const, estimatedHours: 20, startDate: '2026-03-15', dueDate: '2026-04-15', order: 1 },
-    { id: genId(), projectId: project1Id, phaseId: p1Phase3, title: 'Final presentation', description: 'Prepare and deliver final presentation', assigneeId: users[1].id, status: 'To Do' as const, estimatedHours: 12, startDate: '2026-05-01', dueDate: '2026-06-15', order: 0 },
-    { id: genId(), projectId: project2Id, phaseId: p2Phase1, title: 'Ecosystem actor identification', description: 'Identify all ecosystem actors', assigneeId: users[3].id, status: 'In Progress' as const, estimatedHours: 40, startDate: '2026-02-01', dueDate: '2026-03-01', order: 0 },
-    { id: genId(), projectId: project2Id, phaseId: p2Phase1, title: 'Data collection', description: 'Collect quantitative data', assigneeId: users[5].id, status: 'To Do' as const, estimatedHours: 30, startDate: '2026-02-15', dueDate: '2026-03-15', order: 1 },
-    { id: genId(), projectId: project2Id, phaseId: p2Phase2, title: 'Network visualization', description: 'Build interactive network map', assigneeId: users[2].id, status: 'To Do' as const, estimatedHours: 24, startDate: '2026-03-15', dueDate: '2026-04-30', order: 0 },
+    { id: genId(), projectId: project1Id, phaseId: p1Phase1, title: 'Stakeholder interviews', description: 'Interview 8 key stakeholders', assigneeIds: [users[1].id], status: 'Done' as const, estimatedHours: 16, startDate: '2026-01-15', dueDate: '2026-02-01', order: 0 },
+    { id: genId(), projectId: project1Id, phaseId: p1Phase1, title: 'Technology landscape review', description: 'Map current quantum computing landscape', assigneeIds: [users[4].id], status: 'In Progress' as const, estimatedHours: 24, startDate: '2026-01-20', dueDate: '2026-02-15', order: 1 },
+    { id: genId(), projectId: project1Id, phaseId: p1Phase2, title: 'Gap analysis report', description: 'Identify capability gaps', assigneeIds: [users[4].id, users[1].id], status: 'To Do' as const, estimatedHours: 32, startDate: '2026-02-15', dueDate: '2026-03-15', order: 0 },
+    { id: genId(), projectId: project1Id, phaseId: p1Phase2, title: 'Strategic recommendations', description: 'Draft strategic roadmap', assigneeIds: [users[0].id], status: 'To Do' as const, estimatedHours: 20, startDate: '2026-03-15', dueDate: '2026-04-15', order: 1 },
+    { id: genId(), projectId: project1Id, phaseId: p1Phase3, title: 'Final presentation', description: 'Prepare and deliver final presentation', assigneeIds: [users[1].id, users[0].id], status: 'To Do' as const, estimatedHours: 12, startDate: '2026-05-01', dueDate: '2026-06-15', order: 0 },
+    { id: genId(), projectId: project2Id, phaseId: p2Phase1, title: 'Ecosystem actor identification', description: 'Identify all ecosystem actors', assigneeIds: [users[3].id], status: 'In Progress' as const, estimatedHours: 40, startDate: '2026-02-01', dueDate: '2026-03-01', order: 0 },
+    { id: genId(), projectId: project2Id, phaseId: p2Phase1, title: 'Data collection', description: 'Collect quantitative data', assigneeIds: [users[5].id, users[3].id], status: 'To Do' as const, estimatedHours: 30, startDate: '2026-02-15', dueDate: '2026-03-15', order: 1 },
+    { id: genId(), projectId: project2Id, phaseId: p2Phase2, title: 'Network visualization', description: 'Build interactive network map', assigneeIds: [users[2].id], status: 'To Do' as const, estimatedHours: 24, startDate: '2026-03-15', dueDate: '2026-04-30', order: 0 },
   ];
 
   // Sample time logs

@@ -72,7 +72,7 @@ export default function Dashboard() {
     ? data.projects
     : data.projects.filter(p =>
         data.allocations.some(a => a.projectId === p.id && a.userId === currentUser?.id) ||
-        data.tasks.some(t => t.projectId === p.id && t.assigneeId === currentUser?.id)
+        data.tasks.some(t => t.projectId === p.id && t.assigneeIds.includes(currentUser?.id || ''))
       );
 
   return (

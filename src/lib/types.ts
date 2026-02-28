@@ -54,7 +54,7 @@ export interface Task {
   phaseId: string;
   title: string;
   description: string;
-  assigneeId: string | null;
+  assigneeIds: string[];
   status: TaskStatus;
   estimatedHours: number;
   startDate: string;
@@ -67,7 +67,7 @@ export interface SubTask {
   taskId: string;
   title: string;
   description: string;
-  assigneeId: string | null;
+  assigneeIds: string[];
   status: TaskStatus;
   estimatedHours: number;
   startDate: string;
