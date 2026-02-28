@@ -50,10 +50,10 @@ export default function ProjectDetail() {
     convertCurrency(amount, from as CurrencyCode, baseCurrency, rates);
 
   // Financials (converted to base currency)
-  const projectRevenue = conv(project.monthlyFee, project.currency || 'EUR');
+  const projectRevenue = conv(project.monthlyFee, project.currency || 'USD');
   const projectCost = allocations.reduce((c, alloc) => {
     const user = data.users.find(u => u.id === alloc.userId);
-    return c + (user ? conv(user.monthlySalary * (alloc.ftePercent / 100), user.currency || 'EUR') : 0);
+    return c + (user ? conv(user.monthlySalary * (alloc.ftePercent / 100), user.currency || 'USD') : 0);
   }, 0);
   const margin = projectRevenue > 0 ? ((projectRevenue - projectCost) / projectRevenue) * 100 : 0;
   const marginColor = margin > 30 ? 'financial-positive' : margin > 10 ? 'financial-warning' : 'financial-negative';
@@ -150,7 +150,7 @@ export default function ProjectDetail() {
               <p key={alert.user?.id} className="text-sm text-muted-foreground">
                 <span className="font-medium text-foreground">{alert.user?.name}</span>: {alert.logged}h logged vs {alert.alloc.agreedMonthlyHours}h cap →{' '}
                 <span className="font-semibold text-warning">
-                  Extra billing: {formatMoney(alert.delta * alert.alloc.billableHourlyRate, (project.currency || 'EUR') as CurrencyCode)}
+                  Extra billing: {formatMoney(alert.delta * alert.alloc.billableHourlyRate, (project.currency || 'USD') as CurrencyCode)}
                 </span>
               </p>
             ))}
@@ -235,7 +235,7 @@ export default function ProjectDetail() {
                         {isManagerOrAbove && (
                           <div className="text-right">
                             <p className="text-xs text-muted-foreground">Rate</p>
-                            <p>{formatMoney(alloc.billableHourlyRate, (project.currency || 'EUR') as CurrencyCode)}/h</p>
+                            <p>{formatMoney(alloc.billableHourlyRate, (project.currency || 'USD') as CurrencyCode)}/h</p>
                           </div>
                         )}
                       </div>

@@ -25,12 +25,12 @@ export default function Dashboard() {
 
   const activeProjects = data.projects.filter(p => p.status === 'Active');
 
-  const totalRevenue = activeProjects.reduce((sum, p) => sum + conv(p.monthlyFee, p.currency || 'EUR'), 0);
+  const totalRevenue = activeProjects.reduce((sum, p) => sum + conv(p.monthlyFee, p.currency || 'USD'), 0);
   const totalCost = activeProjects.reduce((sum, project) => {
     const projectAllocations = data.allocations.filter(a => a.projectId === project.id);
     return sum + projectAllocations.reduce((c, alloc) => {
       const user = data.users.find(u => u.id === alloc.userId);
-      return c + (user ? conv(user.monthlySalary * (alloc.ftePercent / 100), user.currency || 'EUR') : 0);
+      return c + (user ? conv(user.monthlySalary * (alloc.ftePercent / 100), user.currency || 'USD') : 0);
     }, 0);
   }, 0);
   const blendedMargin = totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0;
@@ -165,9 +165,9 @@ export default function Dashboard() {
 
             const projectCost = projectAllocations.reduce((c, alloc) => {
               const user = data.users.find(u => u.id === alloc.userId);
-              return c + (user ? conv(user.monthlySalary * (alloc.ftePercent / 100), user.currency || 'EUR') : 0);
+              return c + (user ? conv(user.monthlySalary * (alloc.ftePercent / 100), user.currency || 'USD') : 0);
             }, 0);
-            const projectRevenue = conv(project.monthlyFee, project.currency || 'EUR');
+            const projectRevenue = conv(project.monthlyFee, project.currency || 'USD');
             const projectMargin = projectRevenue > 0 ? ((projectRevenue - projectCost) / projectRevenue) * 100 : 0;
 
             return (
