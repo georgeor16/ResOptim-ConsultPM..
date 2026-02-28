@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -10,6 +10,7 @@ interface Props {
 
 export default function TeamHeatmap({ data }: Props) {
   const navigate = useNavigate();
+  const [showOverallocatedOnly, setShowOverallocatedOnly] = useState(false);
   const { users, activeProjects, matrix } = useMemo(() => {
     const activeProjects = data.projects.filter(p => p.status === 'Active');
     const users = data.users;
@@ -44,13 +45,29 @@ export default function TeamHeatmap({ data }: Props) {
     return 'text-muted-foreground';
   };
 
+  const displayUsers = showOverallocatedOnly
+    ? users.filter(u => getTotalFte(u.id) > 100)
+    : users;
+
   if (users.length === 0 || activeProjects.length === 0) return null;
 
   return (
     <Card>
       <CardContent className="p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-foreground text-sm">Team Utilization</h3>
+          <div className="flex items-center gap-3">
+            <h3 className="font-semibold text-foreground text-sm">Team Utilization</h3>
+            <button
+              onClick={() => setShowOverallocatedOnly(prev => !prev)}
+              className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                showOverallocatedOnly
+                  ? 'bg-destructive/10 border-destructive/30 text-destructive'
+                  : 'border-border text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {showOverallocatedOnly ? 'Overallocated only' : 'Show overallocated'}
+            </button>
+          </div>
           <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
             <span className="flex items-center gap-1"><span className="h-2.5 w-5 rounded-sm bg-muted/30 border border-border" />0%</span>
             <span className="flex items-center gap-1"><span className="h-2.5 w-5 rounded-sm bg-accent/20" />≤25%</span>
@@ -75,7 +92,7 @@ export default function TeamHeatmap({ data }: Props) {
             </thead>
             <TooltipProvider>
               <tbody>
-                {users.map(user => {
+                {displayUsers.map(user => {
                   const total = getTotalFte(user.id);
                   return (
                     <tr key={user.id} className="border-b border-border/50 hover:bg-muted/20">
