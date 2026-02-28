@@ -12,7 +12,7 @@ interface Props {
   placeholder?: string;
 }
 
-export default function MultiSelectAssignee({ users, selectedIds, onChange, placeholder = 'Select assignees' }: Props) {
+export default function MultiSelectAssignee({ users, selectedIds = [], onChange, placeholder = 'Select assignees' }: Props) {
   const [open, setOpen] = useState(false);
 
   const toggle = (userId: string) => {
