@@ -15,6 +15,7 @@ export interface User {
   monthlySalary: number;
   billableHourlyRate: number;
   avatarColor: string;
+  currency: string; // CurrencyCode
 }
 
 export interface Project {
@@ -27,6 +28,7 @@ export interface Project {
   startDate: string;
   endDate: string;
   monthlyFee: number;
+  currency: string; // CurrencyCode
   createdAt: string;
 }
 

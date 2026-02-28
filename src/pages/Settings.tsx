@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, Plus, X, Layers } from 'lucide-react';
+import { Trash2, Plus, X, Layers, Globe } from 'lucide-react';
 import { loadCustomTemplates, saveCustomTemplates, FIXED_TEMPLATES, type CategoryTemplate, type PhaseTemplate, type TeamRequirement } from '@/lib/templates';
 import type { ProjectCategory } from '@/lib/types';
 import TemplatePreview from '@/components/TemplatePreview';
+import { SUPPORTED_CURRENCIES, getBaseCurrency, setBaseCurrency, type CurrencyCode } from '@/lib/currency';
 
 const TEMPLATABLE_CATEGORIES: ProjectCategory[] = ['Strategy', 'Research', 'Innovation Ecosystem', 'Quantum/Deep Tech', 'Scaleup Support'];
 
@@ -19,6 +20,7 @@ export default function SettingsPage() {
   const [editPhases, setEditPhases] = useState<PhaseTemplate[]>([]);
   const [editTeam, setEditTeam] = useState<TeamRequirement[]>([]);
   const [editTimeline, setEditTimeline] = useState(4);
+  const [baseCurrencyState, setBaseCurrencyState] = useState<CurrencyCode>(getBaseCurrency());
 
   if (!isAdmin) {
     return <div className="text-center py-12 text-muted-foreground">Access restricted</div>;
@@ -79,6 +81,29 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="text-sm text-muted-foreground">Application configuration</p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Globe className="h-4 w-4" />
+            Currency & FX
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-xs">Base Reporting Currency</Label>
+            <p className="text-xs text-muted-foreground">All financial figures across Dashboard, Team, and Project views will be converted to this currency using daily FX rates from frankfurter.app.</p>
+            <Select value={baseCurrencyState} onValueChange={(v) => { setBaseCurrencyState(v as CurrencyCode); setBaseCurrency(v as CurrencyCode); }}>
+              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_CURRENCIES.map(c => (
+                  <SelectItem key={c.code} value={c.code}>{c.symbol} {c.code} — {c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
