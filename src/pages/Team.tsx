@@ -1,15 +1,33 @@
 import { useMemo, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { loadData } from '@/lib/store';
+import { loadData, addItem, genId } from '@/lib/store';
 import { Card, CardContent } from '@/components/ui/card';
-import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, getCurrencySymbol, type CurrencyCode } from '@/lib/currency';
-import type { FxRates } from '@/lib/currency';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Plus } from 'lucide-react';
+import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, getCurrencySymbol, SUPPORTED_CURRENCIES, type CurrencyCode, type FxRates } from '@/lib/currency';
+import type { Role } from '@/lib/types';
+
+const AVATAR_COLORS = [
+  'hsl(170, 60%, 40%)', 'hsl(222, 47%, 30%)', 'hsl(270, 50%, 45%)',
+  'hsl(38, 70%, 50%)', 'hsl(340, 60%, 50%)', 'hsl(200, 60%, 45%)',
+  'hsl(150, 50%, 35%)', 'hsl(10, 65%, 50%)', 'hsl(260, 55%, 50%)',
+];
 
 export default function Team() {
   const { isManagerOrAbove, isAdmin } = useAuth();
-  const data = useMemo(() => loadData(), []);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const data = useMemo(() => loadData(), [refreshKey]);
   const baseCurrency = getBaseCurrency();
   const [rates, setRates] = useState<FxRates>(loadFxRates());
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState({
+    name: '', email: '', role: 'member' as Role,
+    monthlySalary: '', billableHourlyRate: '', currency: 'USD' as CurrencyCode,
+  });
 
   useEffect(() => {
     refreshFxRates().then(setRates);
@@ -24,11 +42,101 @@ export default function Team() {
 
   const activeProjects = data.projects.filter(p => p.status === 'Active');
 
+  const handleAddMember = () => {
+    if (!form.name || !form.email) return;
+    const color = AVATAR_COLORS[data.users.length % AVATAR_COLORS.length];
+    addItem('users', {
+      id: genId(),
+      name: form.name,
+      email: form.email,
+      role: form.role,
+      monthlySalary: parseFloat(form.monthlySalary) || 0,
+      billableHourlyRate: parseFloat(form.billableHourlyRate) || 0,
+      currency: form.currency,
+      avatarColor: color,
+    });
+    setForm({ name: '', email: '', role: 'member', monthlySalary: '', billableHourlyRate: '', currency: 'USD' });
+    setDialogOpen(false);
+    setRefreshKey(k => k + 1);
+  };
+
+  const roleLabel = (role: string) => {
+    switch (role) {
+      case 'admin': return 'CEO';
+      case 'manager': return 'Director';
+      case 'member': return 'Advisor';
+      default: return role;
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Team Overview</h1>
-        <p className="text-sm text-muted-foreground">Financial summary & utilization · Base: {baseCurrency}</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Team Overview</h1>
+          <p className="text-sm text-muted-foreground">Financial summary & utilization · Base: {baseCurrency}</p>
+        </div>
+        {isAdmin && (
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-accent text-accent-foreground hover:bg-accent/90">
+                <Plus className="h-4 w-4 mr-2" /> Add Member
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Team Member</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Full Name *</Label>
+                    <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Jane Smith" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Email *</Label>
+                    <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="jane@company.com" />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Role</Label>
+                  <Select value={form.role} onValueChange={v => setForm(f => ({ ...f, role: v as Role }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">CEO / Admin</SelectItem>
+                      <SelectItem value="manager">Director / Manager</SelectItem>
+                      <SelectItem value="member">Advisor / Member</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Currency</Label>
+                  <Select value={form.currency} onValueChange={v => setForm(f => ({ ...f, currency: v as CurrencyCode }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {SUPPORTED_CURRENCIES.map(c => (
+                        <SelectItem key={c.code} value={c.code}>{c.symbol} {c.code} — {c.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Monthly Salary ({getCurrencySymbol(form.currency)})</Label>
+                    <Input type="number" value={form.monthlySalary} onChange={e => setForm(f => ({ ...f, monthlySalary: e.target.value }))} placeholder="5000" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Billable Rate ({getCurrencySymbol(form.currency)}/h)</Label>
+                    <Input type="number" value={form.billableHourlyRate} onChange={e => setForm(f => ({ ...f, billableHourlyRate: e.target.value }))} placeholder="200" />
+                  </div>
+                </div>
+                <Button onClick={handleAddMember} disabled={!form.name || !form.email} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
+                  Add Member
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <Card>
@@ -49,22 +157,13 @@ export default function Team() {
             </thead>
             <tbody>
               {data.users.map(user => {
-                const userCurrency = (user.currency || 'EUR') as CurrencyCode;
+                const userCurrency = (user.currency || 'USD') as CurrencyCode;
                 const userAllocations = data.allocations.filter(a =>
                   a.userId === user.id && activeProjects.some(p => p.id === a.projectId)
                 );
                 const totalFTE = userAllocations.reduce((s, a) => s + a.ftePercent, 0);
                 const impliedCost = conv(user.monthlySalary * (totalFTE / 100), userCurrency);
                 const utilization = totalFTE;
-
-                const roleLabel = (role: string) => {
-                  switch (role) {
-                    case 'admin': return 'CEO';
-                    case 'manager': return 'Director';
-                    case 'member': return 'Advisor';
-                    default: return role;
-                  }
-                };
 
                 const utilizationColor = utilization > 100 ? 'financial-negative' : utilization > 80 ? 'financial-warning' : 'financial-positive';
 
@@ -78,7 +177,10 @@ export default function Team() {
                         >
                           {user.name.split(' ').map(n => n[0]).join('')}
                         </div>
-                        <span className="font-medium">{user.name}</span>
+                        <div>
+                          <span className="font-medium">{user.name}</span>
+                          <p className="text-xs text-muted-foreground">{user.email}</p>
+                        </div>
                       </div>
                     </td>
                     <td className="p-3 text-muted-foreground">{roleLabel(user.role)}</td>
