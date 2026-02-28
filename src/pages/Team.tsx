@@ -29,7 +29,8 @@ export default function Team() {
     annualSalary: '', currency: 'USD' as CurrencyCode,
   });
 
-  const computedBillableRate = form.annualSalary ? parseFloat(form.annualSalary) / 12 / 160 : 0;
+  const computedHourlyRate = form.annualSalary ? parseFloat(form.annualSalary) / 12 / 160 : 0;
+  const computedBillableRate = computedHourlyRate * 1.25;
   const computedMonthlySalary = form.annualSalary ? parseFloat(form.annualSalary) / 12 : 0;
 
   useEffect(() => {
@@ -123,15 +124,20 @@ export default function Team() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Annual Salary ({getCurrencySymbol(form.currency)})</Label>
                     <Input type="number" value={form.annualSalary} onChange={e => setForm(f => ({ ...f, annualSalary: e.target.value }))} placeholder="60000" />
                   </div>
                   <div className="space-y-1.5">
+                    <Label className="text-xs">Hourly Rate ({getCurrencySymbol(form.currency)}/h)</Label>
+                    <Input type="number" value={computedHourlyRate.toFixed(2)} readOnly className="bg-muted" />
+                    <p className="text-[10px] text-muted-foreground">annual ÷ 12 ÷ 160</p>
+                  </div>
+                  <div className="space-y-1.5">
                     <Label className="text-xs">Billable Rate ({getCurrencySymbol(form.currency)}/h)</Label>
                     <Input type="number" value={computedBillableRate.toFixed(2)} readOnly className="bg-muted" />
-                    <p className="text-[10px] text-muted-foreground">Auto: annual ÷ 12 ÷ 160</p>
+                    <p className="text-[10px] text-muted-foreground">+25% markup</p>
                   </div>
                 </div>
                 <Button onClick={handleAddMember} disabled={!form.name || !form.email} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
