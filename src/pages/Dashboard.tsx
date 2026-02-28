@@ -1,31 +1,40 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData } from '@/lib/store';
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { TrendingUp, AlertTriangle, DollarSign, FolderKanban, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, type CurrencyCode } from '@/lib/currency';
+import type { FxRates } from '@/lib/currency';
 
 export default function Dashboard() {
   const { isManagerOrAbove, currentUser } = useAuth();
   const navigate = useNavigate();
   const data = useMemo(() => loadData(), []);
+  const baseCurrency = getBaseCurrency();
+  const [rates, setRates] = useState<FxRates>(loadFxRates());
+
+  useEffect(() => {
+    refreshFxRates().then(setRates);
+  }, []);
+
+  const conv = (amount: number, from: string) =>
+    convertCurrency(amount, from as CurrencyCode, baseCurrency, rates);
 
   const activeProjects = data.projects.filter(p => p.status === 'Active');
 
-  // Financial calculations for managers/admins
-  const totalRevenue = activeProjects.reduce((sum, p) => sum + p.monthlyFee, 0);
+  const totalRevenue = activeProjects.reduce((sum, p) => sum + conv(p.monthlyFee, p.currency || 'EUR'), 0);
   const totalCost = activeProjects.reduce((sum, project) => {
     const projectAllocations = data.allocations.filter(a => a.projectId === project.id);
     return sum + projectAllocations.reduce((c, alloc) => {
       const user = data.users.find(u => u.id === alloc.userId);
-      return c + (user ? user.monthlySalary * (alloc.ftePercent / 100) : 0);
+      return c + (user ? conv(user.monthlySalary * (alloc.ftePercent / 100), user.currency || 'EUR') : 0);
     }, 0);
   }, 0);
   const blendedMargin = totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0;
 
-  // Overage risk
   const overageCount = activeProjects.filter(project => {
     const projectAllocations = data.allocations.filter(a => a.projectId === project.id);
     return projectAllocations.some(alloc => {
@@ -59,7 +68,6 @@ export default function Dashboard() {
     return 'financial-negative';
   };
 
-  // Filter projects for team members - show only their assigned projects
   const visibleProjects = isManagerOrAbove
     ? data.projects
     : data.projects.filter(p =>
@@ -84,7 +92,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Financial summary bar - Admin/Manager only */}
       {isManagerOrAbove && (
         <div className="grid grid-cols-4 gap-4">
           <Card>
@@ -93,8 +100,8 @@ export default function Dashboard() {
                 <DollarSign className="h-3.5 w-3.5" />
                 Active Revenue
               </div>
-              <p className="text-2xl font-bold">€{totalRevenue.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground">/month</p>
+              <p className="text-2xl font-bold">{formatMoney(totalRevenue, baseCurrency)}</p>
+              <p className="text-xs text-muted-foreground">/month ({baseCurrency})</p>
             </CardContent>
           </Card>
           <Card>
@@ -103,8 +110,8 @@ export default function Dashboard() {
                 <TrendingUp className="h-3.5 w-3.5" />
                 Team Cost
               </div>
-              <p className="text-2xl font-bold">€{totalCost.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground">/month</p>
+              <p className="text-2xl font-bold">{formatMoney(totalCost, baseCurrency)}</p>
+              <p className="text-xs text-muted-foreground">/month ({baseCurrency})</p>
             </CardContent>
           </Card>
           <Card>
@@ -116,7 +123,7 @@ export default function Dashboard() {
               <p className={`text-2xl font-bold ${marginColor(blendedMargin)}`}>
                 {blendedMargin.toFixed(1)}%
               </p>
-              <p className="text-xs text-muted-foreground">€{(totalRevenue - totalCost).toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground">{formatMoney(totalRevenue - totalCost, baseCurrency)}</p>
             </CardContent>
           </Card>
           <Card>
@@ -134,7 +141,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Project cards */}
       {visibleProjects.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
@@ -157,12 +163,12 @@ export default function Dashboard() {
             const doneTasks = projectTasks.filter(t => t.status === 'Done').length;
             const progress = projectTasks.length > 0 ? (doneTasks / projectTasks.length) * 100 : 0;
 
-            // Project margin
             const projectCost = projectAllocations.reduce((c, alloc) => {
               const user = data.users.find(u => u.id === alloc.userId);
-              return c + (user ? user.monthlySalary * (alloc.ftePercent / 100) : 0);
+              return c + (user ? conv(user.monthlySalary * (alloc.ftePercent / 100), user.currency || 'EUR') : 0);
             }, 0);
-            const projectMargin = project.monthlyFee > 0 ? ((project.monthlyFee - projectCost) / project.monthlyFee) * 100 : 0;
+            const projectRevenue = conv(project.monthlyFee, project.currency || 'EUR');
+            const projectMargin = projectRevenue > 0 ? ((projectRevenue - projectCost) / projectRevenue) * 100 : 0;
 
             return (
               <Card
@@ -190,12 +196,11 @@ export default function Dashboard() {
 
                   {isManagerOrAbove && (
                     <div className="flex items-center justify-between text-sm mb-3">
-                      <span className="text-muted-foreground">€{project.monthlyFee.toLocaleString()}/mo</span>
+                      <span className="text-muted-foreground">{formatMoney(projectRevenue, baseCurrency)}/mo</span>
                       <span className={marginColor(projectMargin)}>{projectMargin.toFixed(0)}% margin</span>
                     </div>
                   )}
 
-                  {/* Progress bar */}
                   <div className="mb-3">
                     <div className="flex justify-between text-xs text-muted-foreground mb-1">
                       <span>{doneTasks}/{projectTasks.length} tasks</span>
@@ -206,7 +211,6 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Assigned team */}
                   <div className="flex items-center">
                     <div className="flex -space-x-2">
                       {assignedUsers.slice(0, 4).map((user) => user && (

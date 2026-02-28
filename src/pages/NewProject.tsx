@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData, saveData, genId } from '@/lib/store';
-import type { ProjectCategory, ProjectStatus, Priority, Allocation, Phase } from '@/lib/types';
+import type { ProjectCategory, ProjectStatus, Priority, Allocation, Phase, Project } from '@/lib/types';
+import { SUPPORTED_CURRENCIES } from '@/lib/currency';
 import { getTemplateForCategory } from '@/lib/templates';
 import TemplatePreview from '@/components/TemplatePreview';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -46,6 +47,7 @@ export default function NewProject() {
   const [startDate, setStartDate] = useState<Date | undefined>();
   const [endDate, setEndDate] = useState<Date | undefined>();
   const [monthlyFee, setMonthlyFee] = useState('');
+  const [projectCurrency, setProjectCurrency] = useState<string>('USD');
   const [allocations, setAllocations] = useState<TeamAllocation[]>([]);
   const [phaseEntries, setPhaseEntries] = useState<PhaseEntry[]>([]);
 
@@ -128,7 +130,7 @@ export default function NewProject() {
     if (!name || !client || !startDate || !endDate || !monthlyFee) return;
 
     const projectId = genId();
-    const newProject = {
+    const newProject: Project = {
       id: projectId,
       name,
       client,
@@ -138,6 +140,7 @@ export default function NewProject() {
       startDate: format(startDate, 'yyyy-MM-dd'),
       endDate: format(endDate, 'yyyy-MM-dd'),
       monthlyFee: parseFloat(monthlyFee),
+      currency: projectCurrency,
       createdAt: format(new Date(), 'yyyy-MM-dd'),
     };
 
@@ -255,8 +258,18 @@ export default function NewProject() {
               </Popover>
             </div>
             <div className="space-y-2">
-              <Label>Monthly Fee (€) *</Label>
-              <Input type="number" value={monthlyFee} onChange={e => setMonthlyFee(e.target.value)} placeholder="e.g. 30000" />
+              <Label>Monthly Fee *</Label>
+              <div className="flex gap-2">
+                <Select value={projectCurrency} onValueChange={setProjectCurrency}>
+                  <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_CURRENCIES.map(c => (
+                      <SelectItem key={c.code} value={c.code}>{c.symbol} {c.code}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input type="number" value={monthlyFee} onChange={e => setMonthlyFee(e.target.value)} placeholder="e.g. 30000" />
+              </div>
             </div>
           </div>
         </CardContent>

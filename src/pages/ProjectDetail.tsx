@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData, updateItem, addItem, genId } from '@/lib/store';
@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Plus, Clock, Users, DollarSign, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, type CurrencyCode, type FxRates } from '@/lib/currency';
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -22,6 +23,12 @@ export default function ProjectDetail() {
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', description: '', phaseId: '', assigneeId: '', estimatedHours: 0, startDate: '', dueDate: '' });
+  const baseCurrency = getBaseCurrency();
+  const [rates, setRates] = useState<FxRates>(loadFxRates());
+
+  useEffect(() => {
+    refreshFxRates().then(setRates);
+  }, []);
 
   const data = useMemo(() => loadData(), [refreshKey]);
   const project = data.projects.find(p => p.id === id);
@@ -39,13 +46,16 @@ export default function ProjectDetail() {
   const phases = data.phases.filter(p => p.projectId === project.id).sort((a, b) => a.order - b.order);
   const tasks = data.tasks.filter(t => t.projectId === project.id);
   const timelogs = data.timelogs.filter(t => t.projectId === project.id);
+  const conv = (amount: number, from: string) =>
+    convertCurrency(amount, from as CurrencyCode, baseCurrency, rates);
 
-  // Financials
+  // Financials (converted to base currency)
+  const projectRevenue = conv(project.monthlyFee, project.currency || 'EUR');
   const projectCost = allocations.reduce((c, alloc) => {
     const user = data.users.find(u => u.id === alloc.userId);
-    return c + (user ? user.monthlySalary * (alloc.ftePercent / 100) : 0);
+    return c + (user ? conv(user.monthlySalary * (alloc.ftePercent / 100), user.currency || 'EUR') : 0);
   }, 0);
-  const margin = project.monthlyFee > 0 ? ((project.monthlyFee - projectCost) / project.monthlyFee) * 100 : 0;
+  const margin = projectRevenue > 0 ? ((projectRevenue - projectCost) / projectRevenue) * 100 : 0;
   const marginColor = margin > 30 ? 'financial-positive' : margin > 10 ? 'financial-warning' : 'financial-negative';
 
   // Overage check
@@ -140,7 +150,7 @@ export default function ProjectDetail() {
               <p key={alert.user?.id} className="text-sm text-muted-foreground">
                 <span className="font-medium text-foreground">{alert.user?.name}</span>: {alert.logged}h logged vs {alert.alloc.agreedMonthlyHours}h cap →{' '}
                 <span className="font-semibold text-warning">
-                  Extra billing: €{(alert.delta * alert.alloc.billableHourlyRate).toLocaleString()}
+                  Extra billing: {formatMoney(alert.delta * alert.alloc.billableHourlyRate, (project.currency || 'EUR') as CurrencyCode)}
                 </span>
               </p>
             ))}
@@ -162,14 +172,14 @@ export default function ProjectDetail() {
                 <Card>
                   <CardContent className="p-4">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium mb-1"><DollarSign className="h-3.5 w-3.5" />Monthly Fee</div>
-                    <p className="text-xl font-bold">€{project.monthlyFee.toLocaleString()}</p>
+                    <p className="text-xl font-bold">{formatMoney(projectRevenue, baseCurrency)}</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-4">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium mb-1"><DollarSign className="h-3.5 w-3.5" />Internal Margin</div>
                     <p className={`text-xl font-bold ${marginColor}`}>{margin.toFixed(1)}%</p>
-                    <p className="text-xs text-muted-foreground">€{(project.monthlyFee - projectCost).toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">{formatMoney(projectRevenue - projectCost, baseCurrency)}</p>
                   </CardContent>
                 </Card>
               </>
@@ -225,7 +235,7 @@ export default function ProjectDetail() {
                         {isManagerOrAbove && (
                           <div className="text-right">
                             <p className="text-xs text-muted-foreground">Rate</p>
-                            <p>€{alloc.billableHourlyRate}/h</p>
+                            <p>{formatMoney(alloc.billableHourlyRate, (project.currency || 'EUR') as CurrencyCode)}/h</p>
                           </div>
                         )}
                       </div>

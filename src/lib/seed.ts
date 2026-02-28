@@ -3,12 +3,12 @@ import { genId } from './store';
 
 export function createSeedData(): AppData {
   const users = [
-    { id: genId(), name: 'Marie Laurent', role: 'admin' as const, email: 'marie@consulting.com', monthlySalary: 12000, billableHourlyRate: 350, avatarColor: 'hsl(170, 60%, 40%)' },
-    { id: genId(), name: 'Thomas Berger', role: 'manager' as const, email: 'thomas@consulting.com', monthlySalary: 9000, billableHourlyRate: 280, avatarColor: 'hsl(222, 47%, 30%)' },
-    { id: genId(), name: 'Sophie Dupont', role: 'manager' as const, email: 'sophie@consulting.com', monthlySalary: 8500, billableHourlyRate: 260, avatarColor: 'hsl(270, 50%, 45%)' },
-    { id: genId(), name: 'Lucas Martin', role: 'member' as const, email: 'lucas@consulting.com', monthlySalary: 6000, billableHourlyRate: 200, avatarColor: 'hsl(38, 70%, 50%)' },
-    { id: genId(), name: 'Emma Petit', role: 'member' as const, email: 'emma@consulting.com', monthlySalary: 5000, billableHourlyRate: 180, avatarColor: 'hsl(340, 60%, 50%)' },
-    { id: genId(), name: 'Hugo Moreau', role: 'member' as const, email: 'hugo@consulting.com', monthlySalary: 4500, billableHourlyRate: 160, avatarColor: 'hsl(200, 60%, 45%)' },
+    { id: genId(), name: 'Marie Laurent', role: 'admin' as const, email: 'marie@consulting.com', monthlySalary: 12000, billableHourlyRate: 350, avatarColor: 'hsl(170, 60%, 40%)', currency: 'EUR' },
+    { id: genId(), name: 'Thomas Berger', role: 'manager' as const, email: 'thomas@consulting.com', monthlySalary: 9000, billableHourlyRate: 280, avatarColor: 'hsl(222, 47%, 30%)', currency: 'EUR' },
+    { id: genId(), name: 'Sophie Dupont', role: 'manager' as const, email: 'sophie@consulting.com', monthlySalary: 8500, billableHourlyRate: 260, avatarColor: 'hsl(270, 50%, 45%)', currency: 'USD' },
+    { id: genId(), name: 'Lucas Martin', role: 'member' as const, email: 'lucas@consulting.com', monthlySalary: 6000, billableHourlyRate: 200, avatarColor: 'hsl(38, 70%, 50%)', currency: 'AUD' },
+    { id: genId(), name: 'Emma Petit', role: 'member' as const, email: 'emma@consulting.com', monthlySalary: 5000, billableHourlyRate: 180, avatarColor: 'hsl(340, 60%, 50%)', currency: 'EUR' },
+    { id: genId(), name: 'Hugo Moreau', role: 'member' as const, email: 'hugo@consulting.com', monthlySalary: 4500, billableHourlyRate: 160, avatarColor: 'hsl(200, 60%, 45%)', currency: 'KRW' },
   ];
 
   // Create sample projects
@@ -17,9 +17,9 @@ export function createSeedData(): AppData {
   const project3Id = genId();
 
   const projects = [
-    { id: project1Id, name: 'Quantum Computing Strategy', client: 'TechCorp Europe', category: 'Quantum/Deep Tech' as const, priority: 'High' as const, status: 'Active' as const, startDate: '2026-01-15', endDate: '2026-06-30', monthlyFee: 45000, createdAt: '2026-01-10' },
-    { id: project2Id, name: 'Innovation Ecosystem Mapping', client: 'GovTech Agency', category: 'Innovation Ecosystem' as const, priority: 'Medium' as const, status: 'Active' as const, startDate: '2026-02-01', endDate: '2026-05-31', monthlyFee: 30000, createdAt: '2026-01-25' },
-    { id: project3Id, name: 'Scaleup Growth Accelerator', client: 'VentureHub', category: 'Scaleup Support' as const, priority: 'Low' as const, status: 'On Hold' as const, startDate: '2026-03-01', endDate: '2026-08-31', monthlyFee: 25000, createdAt: '2026-02-15' },
+    { id: project1Id, name: 'Quantum Computing Strategy', client: 'TechCorp Europe', category: 'Quantum/Deep Tech' as const, priority: 'High' as const, status: 'Active' as const, startDate: '2026-01-15', endDate: '2026-06-30', monthlyFee: 45000, currency: 'EUR', createdAt: '2026-01-10' },
+    { id: project2Id, name: 'Innovation Ecosystem Mapping', client: 'GovTech Agency', category: 'Innovation Ecosystem' as const, priority: 'Medium' as const, status: 'Active' as const, startDate: '2026-02-01', endDate: '2026-05-31', monthlyFee: 30000, currency: 'USD', createdAt: '2026-01-25' },
+    { id: project3Id, name: 'Scaleup Growth Accelerator', client: 'VentureHub', category: 'Scaleup Support' as const, priority: 'Low' as const, status: 'On Hold' as const, startDate: '2026-03-01', endDate: '2026-08-31', monthlyFee: 25000, currency: 'AUD', createdAt: '2026-02-15' },
   ];
 
   const allocations = [
