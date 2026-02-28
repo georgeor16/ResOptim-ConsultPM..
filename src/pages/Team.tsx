@@ -204,7 +204,7 @@ export default function Team() {
                         )}
                       </td>
                     )}
-                    <td className="p-3 text-right">{getCurrencySymbol(userCurrency)}{user.billableHourlyRate}/h</td>
+                    <td className="p-3 text-right">{getCurrencySymbol(userCurrency)}{user.billableHourlyRate.toFixed(2)}/h</td>
                     <td className="p-3 text-center text-xs text-muted-foreground">{userCurrency}</td>
                     <td className="p-3 text-right">
                       <span className={utilizationColor + ' font-medium'}>{totalFTE}%</span>
