@@ -141,7 +141,7 @@ export default function ProjectDetail() {
   };
 
   // Filter tasks for team members
-  const visibleTasks = isManagerOrAbove ? tasks : tasks.filter(t => t.assigneeIds.includes(currentUser?.id || ''));
+  const visibleTasks = isManagerOrAbove ? tasks : tasks.filter(t => (t.assigneeIds || []).includes(currentUser?.id || ''));
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -375,7 +375,7 @@ export default function ProjectDetail() {
                         <div className="p-4 text-sm text-muted-foreground text-center">No tasks in this phase</div>
                       ) : (
                         phaseTasks.map(task => {
-                          const assignees = data.users.filter(u => task.assigneeIds.includes(u.id));
+                          const assignees = data.users.filter(u => (task.assigneeIds || []).includes(u.id));
                           const taskLogs = timelogs.filter(t => t.taskId === task.id).reduce((s, t) => s + t.hours, 0);
                           const isOverdue = new Date(task.dueDate) < new Date() && task.status !== 'Done';
 
@@ -385,7 +385,7 @@ export default function ProjectDetail() {
                                 <Select
                                   value={task.status}
                                   onValueChange={(v) => handleStatusChange(task, v as TaskStatus)}
-                                  disabled={!isManagerOrAbove && !task.assigneeIds.includes(currentUser?.id || '')}
+                                  disabled={!isManagerOrAbove && !(task.assigneeIds || []).includes(currentUser?.id || '')}
                                 >
                                   <SelectTrigger className="w-[130px] h-7 text-xs">
                                     <SelectValue />
@@ -597,7 +597,7 @@ function GanttView({ phases, tasks, users, projectStart, projectEnd }: {
                     {phaseTasks.map(task => {
                       const bar = getBarStyle(task.startDate, task.dueDate);
                       const isOverdue = new Date(task.dueDate) < today && task.status !== 'Done';
-                      const assignee = users.find(u => task.assigneeIds.includes(u.id));
+                      const assignee = users.find(u => (task.assigneeIds || []).includes(u.id));
                       return (
                         <div key={task.id} className="relative h-7 mb-1">
                           <div
