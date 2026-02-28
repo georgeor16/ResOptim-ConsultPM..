@@ -146,19 +146,8 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* Analytics: Overdue + Forecast */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <OverdueResources data={data} />
-            <div className="lg:col-span-2">
-              <RevenueForecast data={data} baseCurrency={baseCurrency} rates={rates} />
-            </div>
-          </div>
-
-          {/* Unified Gantt */}
-          <UnifiedGantt data={data} />
-
-          {/* Team Utilization Heatmap */}
-          <TeamHeatmap data={data} />
+          {/* Overdue Tasks */}
+          <OverdueResources data={data} />
         </>
       )}
 
@@ -255,6 +244,19 @@ export default function Dashboard() {
             );
           })}
         </div>
+      )}
+
+      {isManagerOrAbove && (
+        <>
+          {/* Unified Gantt */}
+          <UnifiedGantt data={data} />
+
+          {/* Team Utilization Heatmap */}
+          <TeamHeatmap data={data} />
+
+          {/* 12-Month Revenue & Cost Forecast */}
+          <RevenueForecast data={data} baseCurrency={baseCurrency} rates={rates} />
+        </>
       )}
     </div>
   );
