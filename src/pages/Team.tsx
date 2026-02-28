@@ -1,13 +1,13 @@
 import { useMemo, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { loadData, addItem, genId } from '@/lib/store';
+import { loadData, addItem, deleteItem, genId } from '@/lib/store';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, getCurrencySymbol, SUPPORTED_CURRENCIES, type CurrencyCode, type FxRates } from '@/lib/currency';
 import type { Role } from '@/lib/types';
 
@@ -163,6 +163,7 @@ export default function Team() {
                 {isAdmin && <th className="text-right p-3 font-medium text-muted-foreground">Implied Cost ({baseCurrency})</th>}
                 <th className="text-right p-3 font-medium text-muted-foreground">Utilization</th>
                 <th className="text-right p-3 font-medium text-muted-foreground">Projects</th>
+                {isAdmin && <th className="text-center p-3 font-medium text-muted-foreground"></th>}
               </tr>
             </thead>
             <tbody>
@@ -222,6 +223,21 @@ export default function Team() {
                       </div>
                     </td>
                     <td className="p-3 text-right text-muted-foreground">{userAllocations.length}</td>
+                    {isAdmin && (
+                      <td className="p-3 text-center">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => {
+                            deleteItem('users', user.id);
+                            setRefreshKey(k => k + 1);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
