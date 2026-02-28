@@ -26,8 +26,11 @@ export default function Team() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({
     name: '', email: '', role: 'member' as Role,
-    monthlySalary: '', billableHourlyRate: '', currency: 'USD' as CurrencyCode,
+    annualSalary: '', currency: 'USD' as CurrencyCode,
   });
+
+  const computedBillableRate = form.annualSalary ? parseFloat(form.annualSalary) / 12 / 160 : 0;
+  const computedMonthlySalary = form.annualSalary ? parseFloat(form.annualSalary) / 12 : 0;
 
   useEffect(() => {
     refreshFxRates().then(setRates);
@@ -50,12 +53,12 @@ export default function Team() {
       name: form.name,
       email: form.email,
       role: form.role,
-      monthlySalary: parseFloat(form.monthlySalary) || 0,
-      billableHourlyRate: parseFloat(form.billableHourlyRate) || 0,
+      monthlySalary: computedMonthlySalary,
+      billableHourlyRate: computedBillableRate,
       currency: form.currency,
       avatarColor: color,
     });
-    setForm({ name: '', email: '', role: 'member', monthlySalary: '', billableHourlyRate: '', currency: 'USD' });
+    setForm({ name: '', email: '', role: 'member', annualSalary: '', currency: 'USD' });
     setDialogOpen(false);
     setRefreshKey(k => k + 1);
   };
@@ -122,12 +125,13 @@ export default function Team() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Monthly Salary ({getCurrencySymbol(form.currency)})</Label>
-                    <Input type="number" value={form.monthlySalary} onChange={e => setForm(f => ({ ...f, monthlySalary: e.target.value }))} placeholder="5000" />
+                    <Label className="text-xs">Annual Salary ({getCurrencySymbol(form.currency)})</Label>
+                    <Input type="number" value={form.annualSalary} onChange={e => setForm(f => ({ ...f, annualSalary: e.target.value }))} placeholder="60000" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Billable Rate ({getCurrencySymbol(form.currency)}/h)</Label>
-                    <Input type="number" value={form.billableHourlyRate} onChange={e => setForm(f => ({ ...f, billableHourlyRate: e.target.value }))} placeholder="200" />
+                    <Input type="number" value={computedBillableRate.toFixed(2)} readOnly className="bg-muted" />
+                    <p className="text-[10px] text-muted-foreground">Auto: annual ÷ 12 ÷ 160</p>
                   </div>
                 </div>
                 <Button onClick={handleAddMember} disabled={!form.name || !form.email} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
