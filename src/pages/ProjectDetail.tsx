@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Plus, Clock, Users, DollarSign, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import AddMemberDialog from '@/components/AddMemberDialog';
+import EditProjectDialog from '@/components/EditProjectDialog';
 import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, type CurrencyCode, type FxRates } from '@/lib/currency';
 
 export default function ProjectDetail() {
@@ -136,6 +138,17 @@ export default function ProjectDetail() {
           </div>
           <p className="text-sm text-muted-foreground">{project.client} · {project.category}</p>
         </div>
+        {isManagerOrAbove && (
+          <div className="flex items-center gap-2">
+            <AddMemberDialog
+              projectId={project.id}
+              projectCurrency={(project.currency || 'USD') as CurrencyCode}
+              availableUsers={data.users.filter(u => !allocations.some(a => a.userId === u.id))}
+              onAdded={() => setRefreshKey(k => k + 1)}
+            />
+            <EditProjectDialog project={project} onUpdated={() => setRefreshKey(k => k + 1)} />
+          </div>
+        )}
       </div>
 
       {/* Overage alerts */}
