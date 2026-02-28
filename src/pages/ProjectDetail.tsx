@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { loadData, updateItem, addItem, genId } from '@/lib/store';
+import { loadData, updateItem, addItem, deleteItem, genId } from '@/lib/store';
 import type { Task, TaskStatus } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Plus, Clock, Users, DollarSign, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Plus, Clock, Users, DollarSign, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import AddMemberDialog from '@/components/AddMemberDialog';
 import EditProjectDialog from '@/components/EditProjectDialog';
 import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, type CurrencyCode, type FxRates } from '@/lib/currency';
@@ -24,6 +24,8 @@ export default function ProjectDetail() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', description: '', phaseId: '', assigneeId: '', estimatedHours: 0, startDate: '', dueDate: '' });
   const baseCurrency = getBaseCurrency();
   const [rates, setRates] = useState<FxRates>(loadFxRates());
@@ -103,6 +105,27 @@ export default function ProjectDetail() {
     });
     setNewTask({ title: '', description: '', phaseId: '', assigneeId: '', estimatedHours: 0, startDate: '', dueDate: '' });
     setTaskDialogOpen(false);
+    setRefreshKey(k => k + 1);
+  };
+
+  const handleDeleteTask = (taskId: string) => {
+    deleteItem('tasks', taskId);
+    // Also delete related timelogs and subtasks
+    data.timelogs.filter(t => t.taskId === taskId).forEach(t => deleteItem('timelogs', t.id));
+    data.subtasks.filter(s => s.taskId === taskId).forEach(s => deleteItem('subtasks', s.id));
+    setRefreshKey(k => k + 1);
+  };
+
+  const handleEditTask = (task: Task) => {
+    setEditingTask({ ...task });
+    setEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingTask) return;
+    updateItem('tasks', editingTask);
+    setEditDialogOpen(false);
+    setEditingTask(null);
     setRefreshKey(k => k + 1);
   };
 
@@ -401,6 +424,16 @@ export default function ProjectDetail() {
                                     Overdue
                                   </Badge>
                                 )}
+                                {isManagerOrAbove && (
+                                  <div className="flex items-center gap-1">
+                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEditTask(task)}>
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDeleteTask(task.id)}>
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
@@ -413,6 +446,75 @@ export default function ProjectDetail() {
             })
           )}
         </TabsContent>
+
+        {/* Edit Task Dialog */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Task</DialogTitle>
+            </DialogHeader>
+            {editingTask && (
+              <div className="space-y-4">
+                <div>
+                  <Label>Title</Label>
+                  <Input value={editingTask.title} onChange={e => setEditingTask(t => t ? { ...t, title: e.target.value } : t)} />
+                </div>
+                <div>
+                  <Label>Description</Label>
+                  <Textarea value={editingTask.description} onChange={e => setEditingTask(t => t ? { ...t, description: e.target.value } : t)} />
+                </div>
+                <div>
+                  <Label>Phase</Label>
+                  <Select value={editingTask.phaseId} onValueChange={v => setEditingTask(t => t ? { ...t, phaseId: v } : t)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {phases.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Assignee</Label>
+                  <Select value={editingTask.assigneeId || ''} onValueChange={v => setEditingTask(t => t ? { ...t, assigneeId: v || null } : t)}>
+                    <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                    <SelectContent>
+                      {allocations.map(a => {
+                        const user = data.users.find(u => u.id === a.userId);
+                        return user ? <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem> : null;
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Select value={editingTask.status} onValueChange={v => setEditingTask(t => t ? { ...t, status: v as TaskStatus } : t)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="To Do">To Do</SelectItem>
+                      <SelectItem value="In Progress">In Progress</SelectItem>
+                      <SelectItem value="Blocked">Blocked</SelectItem>
+                      <SelectItem value="Done">Done</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label>Est. Hours</Label>
+                    <Input type="number" value={editingTask.estimatedHours} onChange={e => setEditingTask(t => t ? { ...t, estimatedHours: Number(e.target.value) } : t)} />
+                  </div>
+                  <div>
+                    <Label>Start</Label>
+                    <Input type="date" value={editingTask.startDate} onChange={e => setEditingTask(t => t ? { ...t, startDate: e.target.value } : t)} />
+                  </div>
+                  <div>
+                    <Label>Due</Label>
+                    <Input type="date" value={editingTask.dueDate} onChange={e => setEditingTask(t => t ? { ...t, dueDate: e.target.value } : t)} />
+                  </div>
+                </div>
+                <Button onClick={handleSaveEdit} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">Save Changes</Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         <TabsContent value="gantt" className="mt-4">
           <GanttView phases={phases} tasks={visibleTasks} users={data.users} projectStart={project.startDate} projectEnd={project.endDate} />
