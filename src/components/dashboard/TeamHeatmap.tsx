@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { AppData } from '@/lib/types';
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export default function TeamHeatmap({ data }: Props) {
+  const navigate = useNavigate();
   const { users, activeProjects, matrix } = useMemo(() => {
     const activeProjects = data.projects.filter(p => p.status === 'Active');
     const users = data.users;
@@ -64,7 +66,7 @@ export default function TeamHeatmap({ data }: Props) {
               <tr className="border-b border-border">
                 <th className="text-left py-2 pr-3 font-medium text-muted-foreground w-[140px]">Member</th>
                 {activeProjects.map(p => (
-                  <th key={p.id} className="py-2 px-1 font-medium text-muted-foreground text-center max-w-[80px]">
+                  <th key={p.id} className="py-2 px-1 font-medium text-muted-foreground text-center max-w-[80px] cursor-pointer hover:text-foreground transition-colors" onClick={() => navigate(`/projects/${p.id}`)}>
                     <span className="block truncate" title={p.name}>{p.name}</span>
                   </th>
                 ))}
