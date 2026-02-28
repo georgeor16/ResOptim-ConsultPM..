@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Plus, Clock, Users, DollarSign, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import AddMemberDialog from '@/components/AddMemberDialog';
+import MultiSelectAssignee from '@/components/MultiSelectAssignee';
 import EditProjectDialog from '@/components/EditProjectDialog';
 import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, type CurrencyCode, type FxRates } from '@/lib/currency';
 
@@ -26,7 +27,7 @@ export default function ProjectDetail() {
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', description: '', phaseId: '', assigneeId: '', estimatedHours: 0, startDate: '', dueDate: '' });
+  const [newTask, setNewTask] = useState({ title: '', description: '', phaseId: '', assigneeIds: [] as string[], estimatedHours: 0, startDate: '', dueDate: '' });
   const baseCurrency = getBaseCurrency();
   const [rates, setRates] = useState<FxRates>(loadFxRates());
 
@@ -96,14 +97,14 @@ export default function ProjectDetail() {
       phaseId: newTask.phaseId,
       title: newTask.title,
       description: newTask.description,
-      assigneeId: newTask.assigneeId || null,
+      assigneeIds: newTask.assigneeIds,
       status: 'To Do' as TaskStatus,
       estimatedHours: newTask.estimatedHours,
       startDate: newTask.startDate,
       dueDate: newTask.dueDate,
       order: phaseTasks.length,
     });
-    setNewTask({ title: '', description: '', phaseId: '', assigneeId: '', estimatedHours: 0, startDate: '', dueDate: '' });
+    setNewTask({ title: '', description: '', phaseId: '', assigneeIds: [], estimatedHours: 0, startDate: '', dueDate: '' });
     setTaskDialogOpen(false);
     setRefreshKey(k => k + 1);
   };
@@ -140,7 +141,7 @@ export default function ProjectDetail() {
   };
 
   // Filter tasks for team members
-  const visibleTasks = isManagerOrAbove ? tasks : tasks.filter(t => t.assigneeId === currentUser?.id);
+  const visibleTasks = isManagerOrAbove ? tasks : tasks.filter(t => t.assigneeIds.includes(currentUser?.id || ''));
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -316,16 +317,12 @@ export default function ProjectDetail() {
                       </Select>
                     </div>
                     <div>
-                      <Label>Assignee</Label>
-                      <Select value={newTask.assigneeId} onValueChange={v => setNewTask(t => ({ ...t, assigneeId: v }))}>
-                        <SelectTrigger><SelectValue placeholder="Select assignee" /></SelectTrigger>
-                        <SelectContent>
-                          {allocations.map(a => {
-                            const user = data.users.find(u => u.id === a.userId);
-                            return user ? <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem> : null;
-                          })}
-                        </SelectContent>
-                      </Select>
+                      <Label>Assignees</Label>
+                      <MultiSelectAssignee
+                        users={allocations.map(a => data.users.find(u => u.id === a.userId)!).filter(Boolean)}
+                        selectedIds={newTask.assigneeIds}
+                        onChange={ids => setNewTask(t => ({ ...t, assigneeIds: ids }))}
+                      />
                     </div>
                     <div className="grid grid-cols-3 gap-3">
                       <div>
@@ -378,7 +375,7 @@ export default function ProjectDetail() {
                         <div className="p-4 text-sm text-muted-foreground text-center">No tasks in this phase</div>
                       ) : (
                         phaseTasks.map(task => {
-                          const assignee = data.users.find(u => u.id === task.assigneeId);
+                          const assignees = data.users.filter(u => task.assigneeIds.includes(u.id));
                           const taskLogs = timelogs.filter(t => t.taskId === task.id).reduce((s, t) => s + t.hours, 0);
                           const isOverdue = new Date(task.dueDate) < new Date() && task.status !== 'Done';
 
@@ -388,7 +385,7 @@ export default function ProjectDetail() {
                                 <Select
                                   value={task.status}
                                   onValueChange={(v) => handleStatusChange(task, v as TaskStatus)}
-                                  disabled={!isManagerOrAbove && task.assigneeId !== currentUser?.id}
+                                  disabled={!isManagerOrAbove && !task.assigneeIds.includes(currentUser?.id || '')}
                                 >
                                   <SelectTrigger className="w-[130px] h-7 text-xs">
                                     <SelectValue />
@@ -406,13 +403,18 @@ export default function ProjectDetail() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-4">
-                                {assignee && (
-                                  <div
-                                    className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold"
-                                    style={{ backgroundColor: assignee.avatarColor, color: 'white' }}
-                                    title={assignee.name}
-                                  >
-                                    {assignee.name.split(' ').map(n => n[0]).join('')}
+                                {assignees.length > 0 && (
+                                  <div className="flex -space-x-1.5">
+                                    {assignees.map(assignee => (
+                                      <div
+                                        key={assignee.id}
+                                        className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold border-2 border-background"
+                                        style={{ backgroundColor: assignee.avatarColor, color: 'white' }}
+                                        title={assignee.name}
+                                      >
+                                        {assignee.name.split(' ').map(n => n[0]).join('')}
+                                      </div>
+                                    ))}
                                   </div>
                                 )}
                                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -473,16 +475,12 @@ export default function ProjectDetail() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Assignee</Label>
-                  <Select value={editingTask.assigneeId || ''} onValueChange={v => setEditingTask(t => t ? { ...t, assigneeId: v || null } : t)}>
-                    <SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger>
-                    <SelectContent>
-                      {allocations.map(a => {
-                        const user = data.users.find(u => u.id === a.userId);
-                        return user ? <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem> : null;
-                      })}
-                    </SelectContent>
-                  </Select>
+                  <Label>Assignees</Label>
+                  <MultiSelectAssignee
+                    users={allocations.map(a => data.users.find(u => u.id === a.userId)!).filter(Boolean)}
+                    selectedIds={editingTask.assigneeIds}
+                    onChange={ids => setEditingTask(t => t ? { ...t, assigneeIds: ids } : t)}
+                  />
                 </div>
                 <div>
                   <Label>Status</Label>
@@ -599,7 +597,7 @@ function GanttView({ phases, tasks, users, projectStart, projectEnd }: {
                     {phaseTasks.map(task => {
                       const bar = getBarStyle(task.startDate, task.dueDate);
                       const isOverdue = new Date(task.dueDate) < today && task.status !== 'Done';
-                      const assignee = users.find(u => u.id === task.assigneeId);
+                      const assignee = users.find(u => task.assigneeIds.includes(u.id));
                       return (
                         <div key={task.id} className="relative h-7 mb-1">
                           <div
