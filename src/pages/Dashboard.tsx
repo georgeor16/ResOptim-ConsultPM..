@@ -4,7 +4,7 @@ import { useMemo, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { TrendingUp, AlertTriangle, DollarSign, FolderKanban, Plus } from 'lucide-react';
+import { TrendingUp, AlertTriangle, DollarSign, FolderKanban, Plus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, type CurrencyCode } from '@/lib/currency';
 import type { FxRates } from '@/lib/currency';
@@ -48,6 +48,17 @@ export default function Dashboard() {
     });
   }).length;
 
+  const totalCapacity = data.users.length * 100;
+  const totalAllocated = data.allocations
+    .filter(a => activeProjects.some(p => p.id === a.projectId))
+    .reduce((sum, a) => sum + a.ftePercent, 0);
+  const utilizationPct = totalCapacity > 0 ? (totalAllocated / totalCapacity) * 100 : 0;
+  const overallocatedCount = data.users.filter(u => {
+    const userFte = data.allocations
+      .filter(a => a.userId === u.id && activeProjects.some(p => p.id === a.projectId))
+      .reduce((s, a) => s + a.ftePercent, 0);
+    return userFte > 100;
+  }).length;
   const priorityColor = (p: string) => {
     switch (p) {
       case 'High': return 'bg-priority-high/10 text-priority-high border-priority-high/20';
@@ -99,7 +110,7 @@ export default function Dashboard() {
       {isManagerOrAbove && (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-5 gap-4">
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium mb-1">
@@ -142,6 +153,20 @@ export default function Dashboard() {
                   {overageCount}
                 </p>
                 <p className="text-xs text-muted-foreground">projects at risk</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium mb-1">
+                  <Users className="h-3.5 w-3.5" />
+                  Team Capacity
+                </div>
+                <p className={`text-2xl font-bold ${utilizationPct > 100 ? 'financial-negative' : utilizationPct > 85 ? 'financial-warning' : 'financial-positive'}`}>
+                  {utilizationPct.toFixed(0)}%
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {totalAllocated}% / {totalCapacity}% FTE{overallocatedCount > 0 && ` · ${overallocatedCount} over`}
+                </p>
               </CardContent>
             </Card>
           </div>
