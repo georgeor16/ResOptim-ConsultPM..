@@ -8,6 +8,9 @@ import { TrendingUp, AlertTriangle, DollarSign, FolderKanban, Plus } from 'lucid
 import { Button } from '@/components/ui/button';
 import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, type CurrencyCode } from '@/lib/currency';
 import type { FxRates } from '@/lib/currency';
+import OverdueResources from '@/components/dashboard/OverdueResources';
+import RevenueForecast from '@/components/dashboard/RevenueForcast';
+import UnifiedGantt from '@/components/dashboard/UnifiedGantt';
 
 export default function Dashboard() {
   const { isManagerOrAbove, currentUser } = useAuth();
@@ -93,54 +96,69 @@ export default function Dashboard() {
       </div>
 
       {isManagerOrAbove && (
-        <div className="grid grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium mb-1">
-                <DollarSign className="h-3.5 w-3.5" />
-                Active Revenue
-              </div>
-              <p className="text-2xl font-bold">{formatMoney(totalRevenue, baseCurrency)}</p>
-              <p className="text-xs text-muted-foreground">/month ({baseCurrency})</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium mb-1">
-                <TrendingUp className="h-3.5 w-3.5" />
-                Team Cost
-              </div>
-              <p className="text-2xl font-bold">{formatMoney(totalCost, baseCurrency)}</p>
-              <p className="text-xs text-muted-foreground">/month ({baseCurrency})</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium mb-1">
-                <TrendingUp className="h-3.5 w-3.5" />
-                Blended Margin
-              </div>
-              <p className={`text-2xl font-bold ${marginColor(blendedMargin)}`}>
-                {blendedMargin.toFixed(1)}%
-              </p>
-              <p className="text-xs text-muted-foreground">{formatMoney(totalRevenue - totalCost, baseCurrency)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium mb-1">
-                <AlertTriangle className="h-3.5 w-3.5" />
-                Overage Risk
-              </div>
-              <p className={`text-2xl font-bold ${overageCount > 0 ? 'financial-warning' : 'financial-positive'}`}>
-                {overageCount}
-              </p>
-              <p className="text-xs text-muted-foreground">projects at risk</p>
-            </CardContent>
-          </Card>
-        </div>
+        <>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium mb-1">
+                  <DollarSign className="h-3.5 w-3.5" />
+                  Active Revenue
+                </div>
+                <p className="text-2xl font-bold">{formatMoney(totalRevenue, baseCurrency)}</p>
+                <p className="text-xs text-muted-foreground">/month ({baseCurrency})</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium mb-1">
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  Team Cost
+                </div>
+                <p className="text-2xl font-bold">{formatMoney(totalCost, baseCurrency)}</p>
+                <p className="text-xs text-muted-foreground">/month ({baseCurrency})</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium mb-1">
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  Blended Margin
+                </div>
+                <p className={`text-2xl font-bold ${marginColor(blendedMargin)}`}>
+                  {blendedMargin.toFixed(1)}%
+                </p>
+                <p className="text-xs text-muted-foreground">{formatMoney(totalRevenue - totalCost, baseCurrency)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium mb-1">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Overage Risk
+                </div>
+                <p className={`text-2xl font-bold ${overageCount > 0 ? 'financial-warning' : 'financial-positive'}`}>
+                  {overageCount}
+                </p>
+                <p className="text-xs text-muted-foreground">projects at risk</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Analytics: Overdue + Forecast */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <OverdueResources data={data} />
+            <div className="lg:col-span-2">
+              <RevenueForecast data={data} baseCurrency={baseCurrency} rates={rates} />
+            </div>
+          </div>
+
+          {/* Unified Gantt */}
+          <UnifiedGantt data={data} />
+        </>
       )}
 
+      {/* Project Cards */}
       {visibleProjects.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
