@@ -11,6 +11,7 @@ import type { FxRates } from '@/lib/currency';
 import OverdueResources from '@/components/dashboard/OverdueResources';
 import RevenueForecast from '@/components/dashboard/RevenueForcast';
 import UnifiedGantt from '@/components/dashboard/UnifiedGantt';
+import TeamHeatmap from '@/components/dashboard/TeamHeatmap';
 
 export default function Dashboard() {
   const { isManagerOrAbove, currentUser } = useAuth();
@@ -155,6 +156,9 @@ export default function Dashboard() {
 
           {/* Unified Gantt */}
           <UnifiedGantt data={data} />
+
+          {/* Team Utilization Heatmap */}
+          <TeamHeatmap data={data} />
         </>
       )}
 

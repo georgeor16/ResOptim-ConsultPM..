@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -21,6 +22,7 @@ const PRIORITY_PATTERNS: Record<string, string> = {
 };
 
 export default function UnifiedGantt({ data }: Props) {
+  const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { months, timelineStart, totalDays, projects } = useMemo(() => {
@@ -153,7 +155,7 @@ export default function UnifiedGantt({ data }: Props) {
                 const barStyle = getBarStyle(project.startDate, project.endDate);
 
                 return (
-                  <div key={project.id} className="flex items-center group hover:bg-muted/30 rounded-sm">
+                  <div key={project.id} className="flex items-center group hover:bg-muted/30 rounded-sm cursor-pointer" onClick={() => navigate(`/projects/${project.id}`)}>
                     <div className="w-[180px] shrink-0 py-1.5 pr-3">
                       <p className="text-xs font-medium text-foreground truncate">{project.name}</p>
                       <p className="text-[10px] text-muted-foreground truncate">{project.client}</p>
