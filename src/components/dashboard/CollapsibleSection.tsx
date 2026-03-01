@@ -9,13 +9,28 @@ interface CollapsibleSectionProps {
   defaultOpen?: boolean;
   children: React.ReactNode;
   className?: string;
+  storageKey?: string;
 }
 
-export default function CollapsibleSection({ title, icon, defaultOpen = true, children, className }: CollapsibleSectionProps) {
-  const [open, setOpen] = useState(defaultOpen);
+function getInitialOpen(storageKey: string | undefined, defaultOpen: boolean): boolean {
+  if (!storageKey) return defaultOpen;
+  const stored = localStorage.getItem(`collapse:${storageKey}`);
+  if (stored === 'false') return false;
+  if (stored === 'true') return true;
+  return defaultOpen;
+}
+
+export default function CollapsibleSection({ title, icon, defaultOpen = true, children, className, storageKey }: CollapsibleSectionProps) {
+  const key = storageKey ?? title.toLowerCase().replace(/\s+/g, '-');
+  const [open, setOpen] = useState(() => getInitialOpen(key, defaultOpen));
+
+  const handleOpenChange = (value: boolean) => {
+    setOpen(value);
+    localStorage.setItem(`collapse:${key}`, String(value));
+  };
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className={className}>
+    <Collapsible open={open} onOpenChange={handleOpenChange} className={className}>
       <CollapsibleTrigger className="flex items-center gap-2 w-full group cursor-pointer select-none py-1">
         {icon}
         <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{title}</span>
