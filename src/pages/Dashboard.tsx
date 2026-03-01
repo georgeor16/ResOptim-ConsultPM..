@@ -12,6 +12,7 @@ import OverdueResources from '@/components/dashboard/OverdueResources';
 import RevenueForecast from '@/components/dashboard/RevenueForcast';
 import UnifiedGantt from '@/components/dashboard/UnifiedGantt';
 import TeamHeatmap from '@/components/dashboard/TeamHeatmap';
+import CollapsibleSection from '@/components/dashboard/CollapsibleSection';
 
 export default function Dashboard() {
   const { isManagerOrAbove, currentUser } = useAuth();
@@ -52,24 +53,36 @@ export default function Dashboard() {
 
       {isManagerOrAbove && (
         <>
-          <KpiCards data={data} activeProjects={activeProjects} baseCurrency={baseCurrency} rates={rates} />
-          <OverdueResources data={data} />
+          <CollapsibleSection title="Key Metrics">
+            <KpiCards data={data} activeProjects={activeProjects} baseCurrency={baseCurrency} rates={rates} />
+          </CollapsibleSection>
+          <CollapsibleSection title="Overdue Tasks">
+            <OverdueResources data={data} />
+          </CollapsibleSection>
         </>
       )}
 
-      <ProjectCards
-        data={data}
-        visibleProjects={visibleProjects}
-        isManagerOrAbove={isManagerOrAbove}
-        baseCurrency={baseCurrency}
-        rates={rates}
-      />
+      <CollapsibleSection title="Projects">
+        <ProjectCards
+          data={data}
+          visibleProjects={visibleProjects}
+          isManagerOrAbove={isManagerOrAbove}
+          baseCurrency={baseCurrency}
+          rates={rates}
+        />
+      </CollapsibleSection>
 
       {isManagerOrAbove && (
         <>
-          <UnifiedGantt data={data} />
-          <TeamHeatmap data={data} />
-          <RevenueForecast data={data} baseCurrency={baseCurrency} rates={rates} />
+          <CollapsibleSection title="Project Timeline">
+            <UnifiedGantt data={data} />
+          </CollapsibleSection>
+          <CollapsibleSection title="Team Utilization">
+            <TeamHeatmap data={data} />
+          </CollapsibleSection>
+          <CollapsibleSection title="Revenue Forecast">
+            <RevenueForecast data={data} baseCurrency={baseCurrency} rates={rates} />
+          </CollapsibleSection>
         </>
       )}
     </div>
