@@ -2,7 +2,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { loadData } from '@/lib/store';
 import { useMemo, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Plus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getBaseCurrency, refreshFxRates, loadFxRates } from '@/lib/currency';
 import type { FxRates } from '@/lib/currency';
@@ -43,12 +43,26 @@ export default function Dashboard() {
             {isManagerOrAbove ? `${activeProjects.length} active projects` : 'Your assigned projects'}
           </p>
         </div>
-        {isManagerOrAbove && (
-          <Button onClick={() => navigate('/projects/new')} className="bg-accent text-accent-foreground hover:bg-accent/90">
-            <Plus className="h-4 w-4 mr-2" />
-            New Project
+      <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const keys = Object.keys(localStorage).filter(k => k.startsWith('collapse:'));
+              keys.forEach(k => localStorage.removeItem(k));
+              window.location.reload();
+            }}
+          >
+            <RotateCcw className="h-4 w-4 mr-2" />
+            Reset layout
           </Button>
-        )}
+          {isManagerOrAbove && (
+            <Button onClick={() => navigate('/projects/new')} className="bg-accent text-accent-foreground hover:bg-accent/90">
+              <Plus className="h-4 w-4 mr-2" />
+              New Project
+            </Button>
+          )}
+        </div>
       </div>
 
       {isManagerOrAbove && (
