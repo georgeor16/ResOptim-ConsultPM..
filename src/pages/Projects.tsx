@@ -2,15 +2,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { loadData } from '@/lib/store';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import { useState } from 'react';
+import type { Project } from '@/lib/types';
 
 const priorityColor = (p: string) => {
   switch (p) {
@@ -37,6 +38,24 @@ export default function Projects() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const toggleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  const SortIcon = ({ column }: { column: string }) => {
+    if (sortKey !== column) return <ArrowUpDown className="h-3.5 w-3.5 ml-1 text-muted-foreground/50" />;
+    return sortDir === 'asc'
+      ? <ArrowUp className="h-3.5 w-3.5 ml-1 text-foreground" />
+      : <ArrowDown className="h-3.5 w-3.5 ml-1 text-foreground" />;
+  };
 
   const allProjects = isManagerOrAbove
     ? data.projects
@@ -50,6 +69,30 @@ export default function Projects() {
     const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
     const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter;
     return matchesSearch && matchesStatus && matchesCategory;
+  });
+
+  const priorityOrder: Record<string, number> = { High: 0, Medium: 1, Low: 2 };
+  const statusOrder: Record<string, number> = { Active: 0, 'On Hold': 1, Completed: 2 };
+
+  const getProgress = (project: Project) => {
+    const tasks = data.tasks.filter(t => t.projectId === project.id);
+    const done = tasks.filter(t => t.status === 'Done').length;
+    return tasks.length > 0 ? (done / tasks.length) * 100 : 0;
+  };
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (!sortKey) return 0;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    switch (sortKey) {
+      case 'name': return dir * a.name.localeCompare(b.name);
+      case 'client': return dir * a.client.localeCompare(b.client);
+      case 'status': return dir * ((statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
+      case 'priority': return dir * ((priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9));
+      case 'category': return dir * a.category.localeCompare(b.category);
+      case 'progress': return dir * (getProgress(a) - getProgress(b));
+      case 'timeline': return dir * (new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+      default: return 0;
+    }
   });
 
   const categories = [...new Set(data.projects.map(p => p.category))];
@@ -110,18 +153,32 @@ export default function Projects() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Project</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Category</TableHead>
+                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('name')}>
+                  <span className="flex items-center">Project<SortIcon column="name" /></span>
+                </TableHead>
+                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('client')}>
+                  <span className="flex items-center">Client<SortIcon column="client" /></span>
+                </TableHead>
+                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('status')}>
+                  <span className="flex items-center">Status<SortIcon column="status" /></span>
+                </TableHead>
+                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('priority')}>
+                  <span className="flex items-center">Priority<SortIcon column="priority" /></span>
+                </TableHead>
+                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('category')}>
+                  <span className="flex items-center">Category<SortIcon column="category" /></span>
+                </TableHead>
                 <TableHead>Team</TableHead>
-                <TableHead>Progress</TableHead>
-                <TableHead className="text-right">Timeline</TableHead>
+                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('progress')}>
+                  <span className="flex items-center">Progress<SortIcon column="progress" /></span>
+                </TableHead>
+                <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort('timeline')}>
+                  <span className="flex items-center justify-end">Timeline<SortIcon column="timeline" /></span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map(project => {
+              {sorted.map(project => {
                 const projectAllocations = data.allocations.filter(a => a.projectId === project.id);
                 const assignedUsers = projectAllocations.map(a => data.users.find(u => u.id === a.userId)).filter(Boolean);
                 const projectTasks = data.tasks.filter(t => t.projectId === project.id);
