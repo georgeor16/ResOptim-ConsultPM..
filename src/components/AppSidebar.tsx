@@ -1,4 +1,5 @@
-import { LayoutDashboard, FolderKanban, Users, CalendarRange, Settings, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Users, CalendarRange, Settings, ChevronDown, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -17,6 +18,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
@@ -32,6 +34,7 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
   const { currentUser, users, switchUser, hasRole } = useAuth();
+  const navigate = useNavigate();
 
   const roleLabel = (role: string) => {
     switch (role) {
@@ -132,6 +135,11 @@ export function AppSidebar() {
                   </div>
                 </DropdownMenuItem>
               ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate('/settings')}>
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
