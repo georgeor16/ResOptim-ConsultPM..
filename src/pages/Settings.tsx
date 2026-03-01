@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, Plus, X, Layers, Globe } from 'lucide-react';
+import { Trash2, Plus, X, Layers, Globe, Sun, Moon, Monitor } from 'lucide-react';
 import { loadCustomTemplates, saveCustomTemplates, FIXED_TEMPLATES, type CategoryTemplate, type PhaseTemplate, type TeamRequirement } from '@/lib/templates';
 import type { ProjectCategory } from '@/lib/types';
 import TemplatePreview from '@/components/TemplatePreview';
 import { SUPPORTED_CURRENCIES, getBaseCurrency, setBaseCurrency, type CurrencyCode } from '@/lib/currency';
+import { useTheme } from 'next-themes';
 
 const TEMPLATABLE_CATEGORIES: ProjectCategory[] = ['Strategy', 'Research', 'Innovation Ecosystem', 'Quantum/Deep Tech', 'Scaleup Support'];
 
@@ -21,6 +22,7 @@ export default function SettingsPage() {
   const [editTeam, setEditTeam] = useState<TeamRequirement[]>([]);
   const [editTimeline, setEditTimeline] = useState(4);
   const [baseCurrencyState, setBaseCurrencyState] = useState<CurrencyCode>(getBaseCurrency());
+  const { theme, setTheme } = useTheme();
 
   if (!isAdmin) {
     return <div className="text-center py-12 text-muted-foreground">Access restricted</div>;
@@ -81,6 +83,36 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="text-sm text-muted-foreground">Application configuration</p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Sun className="h-4 w-4" />
+            Appearance
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Label className="text-xs">Theme</Label>
+          <div className="flex gap-2">
+            {([
+              { value: 'light', label: 'Light', icon: Sun },
+              { value: 'dark', label: 'Dark', icon: Moon },
+              { value: 'system', label: 'System', icon: Monitor },
+            ] as const).map(({ value, label, icon: Icon }) => (
+              <Button
+                key={value}
+                variant={theme === value ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setTheme(value)}
+                className="flex items-center gap-2"
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </Button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
