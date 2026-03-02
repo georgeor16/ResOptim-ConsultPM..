@@ -2,8 +2,6 @@
 
 **Resource optimization and consulting project management** — plan projects, allocate team members, track tasks and phases, and view timelines and financials in one place.
 
-![ResOptim](optional: add a screenshot or logo URL)
-
 ---
 
 ## Features
