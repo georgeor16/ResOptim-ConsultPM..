@@ -1,11 +1,12 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData } from '@/lib/store';
-import { useMemo, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getBaseCurrency, refreshFxRates, loadFxRates } from '@/lib/currency';
 import type { FxRates } from '@/lib/currency';
+import type { AppData } from '@/lib/types';
 import KpiCards from '@/components/dashboard/KpiCards';
 import ProjectCards from '@/components/dashboard/ProjectCards';
 import OverdueResources from '@/components/dashboard/OverdueResources';
@@ -17,13 +18,24 @@ import CollapsibleSection from '@/components/dashboard/CollapsibleSection';
 export default function Dashboard() {
   const { isManagerOrAbove, currentUser } = useAuth();
   const navigate = useNavigate();
-  const data = useMemo(() => loadData(), []);
+  const location = useLocation();
+  const [data, setData] = useState<AppData | null>(null);
   const baseCurrency = getBaseCurrency();
   const [rates, setRates] = useState<FxRates>(loadFxRates());
 
+  // Refetch when landing on dashboard so Gantt and all widgets stay in sync with changes
+  useEffect(() => {
+    loadData().then(setData);
+  }, [location.pathname]);
   useEffect(() => {
     refreshFxRates().then(setRates);
   }, []);
+
+  if (!data) {
+    return (
+      <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">Loading...</div>
+    );
+  }
 
   const activeProjects = data.projects.filter(p => p.status === 'Active');
 

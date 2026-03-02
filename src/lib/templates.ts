@@ -19,10 +19,10 @@ export interface CategoryTemplate {
   isFixed: boolean; // true = built-in, false = admin-configured
 }
 
-// Three fixed (mandatory) templates
+// Fixed templates (Scouting has no template; use manual phases or add custom in Settings)
 export const FIXED_TEMPLATES: CategoryTemplate[] = [
   {
-    category: 'Report' as ProjectCategory,
+    category: 'Full Report' as ProjectCategory,
     timelineWeeks: 6,
     phases: [
       { name: 'Briefing', durationWeeks: 1, ftePercent: 25 },
@@ -33,6 +33,19 @@ export const FIXED_TEMPLATES: CategoryTemplate[] = [
     minimumTeam: [
       { role: 'Senior Advisor or above', label: 'lead' },
       { role: 'Advisor', label: 'contributor' },
+    ],
+    isFixed: true,
+  },
+  {
+    category: 'Light Report' as ProjectCategory,
+    timelineWeeks: 3,
+    phases: [
+      { name: 'Scoping', durationWeeks: 0.5, ftePercent: 25 },
+      { name: 'Research & Draft', durationWeeks: 2, ftePercent: 50 },
+      { name: 'Review & Delivery', durationWeeks: 0.5, ftePercent: 50 },
+    ],
+    minimumTeam: [
+      { role: 'Advisor or above', label: 'lead' },
     ],
     isFixed: true,
   },
@@ -49,21 +62,6 @@ export const FIXED_TEMPLATES: CategoryTemplate[] = [
     minimumTeam: [
       { role: 'Director or above', label: 'lead' },
       { role: 'Any', label: 'contributor' },
-      { role: 'Any', label: 'contributor' },
-    ],
-    isFixed: true,
-  },
-  {
-    category: 'Scouting' as ProjectCategory,
-    timelineWeeks: 4,
-    phases: [
-      { name: 'Criteria Definition', durationWeeks: 0.5, ftePercent: 25 },
-      { name: 'Research & Mapping', durationWeeks: 2, ftePercent: 75 },
-      { name: 'Shortlisting & Profiling', durationWeeks: 1, ftePercent: 50 },
-      { name: 'Delivery', durationWeeks: 0.5, ftePercent: 25 },
-    ],
-    minimumTeam: [
-      { role: 'Any', label: 'lead' },
       { role: 'Any', label: 'contributor' },
     ],
     isFixed: true,

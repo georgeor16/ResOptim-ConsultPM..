@@ -1,6 +1,7 @@
-import { useMemo, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData, addItem, deleteItem, genId } from '@/lib/store';
+import type { AppData } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,9 +19,9 @@ const AVATAR_COLORS = [
 ];
 
 export default function Team() {
-  const { isManagerOrAbove, isAdmin } = useAuth();
+  const { isManagerOrAbove, isAdmin, refreshUsers } = useAuth();
   const [refreshKey, setRefreshKey] = useState(0);
-  const data = useMemo(() => loadData(), [refreshKey]);
+  const [data, setData] = useState<AppData | null>(null);
   const baseCurrency = getBaseCurrency();
   const [rates, setRates] = useState<FxRates>(loadFxRates());
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -29,16 +30,24 @@ export default function Team() {
     annualSalary: '', currency: 'USD' as CurrencyCode,
   });
 
-  const computedHourlyRate = form.annualSalary ? parseFloat(form.annualSalary) / 12 / 160 : 0;
-  const computedBillableRate = computedHourlyRate * 1.25;
-  const computedMonthlySalary = form.annualSalary ? parseFloat(form.annualSalary) / 12 : 0;
-
+  useEffect(() => {
+    loadData().then(setData);
+  }, [refreshKey]);
   useEffect(() => {
     refreshFxRates().then(setRates);
   }, []);
 
+  const computedHourlyRate = form.annualSalary ? parseFloat(form.annualSalary) / 12 / 160 : 0;
+  const computedBillableRate = computedHourlyRate * 1.25;
+  const computedMonthlySalary = form.annualSalary ? parseFloat(form.annualSalary) / 12 : 0;
+
   if (!isManagerOrAbove) {
     return <div className="text-center py-12 text-muted-foreground">Access restricted</div>;
+  }
+  if (!data) {
+    return (
+      <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">Loading...</div>
+    );
   }
 
   const conv = (amount: number, from: string) =>
@@ -46,10 +55,10 @@ export default function Team() {
 
   const activeProjects = data.projects.filter(p => p.status === 'Active');
 
-  const handleAddMember = () => {
+  const handleAddMember = async () => {
     if (!form.name || !form.email) return;
     const color = AVATAR_COLORS[data.users.length % AVATAR_COLORS.length];
-    addItem('users', {
+    await addItem('users', {
       id: genId(),
       name: form.name,
       email: form.email,
@@ -61,6 +70,7 @@ export default function Team() {
     });
     setForm({ name: '', email: '', role: 'member', annualSalary: '', currency: 'USD' });
     setDialogOpen(false);
+    await refreshUsers();
     setRefreshKey(k => k + 1);
   };
 
@@ -197,10 +207,10 @@ export default function Team() {
                     <td className="p-3 text-muted-foreground">{roleLabel(user.role)}</td>
                     {isAdmin && (
                       <td className="p-3 text-right">
-                        {getCurrencySymbol(userCurrency)}{user.monthlySalary.toLocaleString()}
+                        {getCurrencySymbol(userCurrency)}{Math.round(user.monthlySalary).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         {userCurrency !== baseCurrency && (
                           <span className="text-xs text-muted-foreground ml-1">
-                            ({formatMoney(conv(user.monthlySalary, userCurrency), baseCurrency)})
+                            ({formatMoney(Math.round(conv(user.monthlySalary, userCurrency)), baseCurrency)})
                           </span>
                         )}
                       </td>
@@ -210,7 +220,7 @@ export default function Team() {
                     <td className="p-3 text-right">
                       <span className={utilizationColor + ' font-medium'}>{totalFTE}%</span>
                     </td>
-                    {isAdmin && <td className="p-3 text-right">{formatMoney(impliedCost, baseCurrency)}</td>}
+                    {isAdmin && <td className="p-3 text-right">{formatMoney(Math.round(impliedCost), baseCurrency)}</td>}
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
@@ -229,8 +239,9 @@ export default function Team() {
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => {
-                            deleteItem('users', user.id);
+                          onClick={async () => {
+                            await deleteItem('users', user.id);
+                            await refreshUsers();
                             setRefreshKey(k => k + 1);
                           }}
                         >

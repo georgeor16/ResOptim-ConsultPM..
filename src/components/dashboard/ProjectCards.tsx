@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { FolderKanban, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { formatMoney, convertCurrency, type CurrencyCode } from '@/lib/currency';
+import { formatMoneyWithCode, convertCurrency, type CurrencyCode } from '@/lib/currency';
 import type { FxRates } from '@/lib/currency';
 import type { AppData, Project } from '@/lib/types';
 
@@ -99,12 +99,12 @@ export default function ProjectCards({ data, visibleProjects, isManagerOrAbove, 
                 <Badge variant="outline" className={statusColor(project.status)}>
                   {project.status}
                 </Badge>
-                <span className="text-xs text-muted-foreground">{project.category}</span>
+                <span className="text-xs text-muted-foreground">{project.category}{project.category === 'Other' && project.categoryOtherSpec ? ` (${project.categoryOtherSpec})` : ''}</span>
               </div>
 
               {isManagerOrAbove && (
                 <div className="flex items-center justify-between text-sm mb-3">
-                  <span className="text-muted-foreground">{formatMoney(projectRevenue, baseCurrency)}/mo</span>
+                  <span className="text-muted-foreground">{formatMoneyWithCode(projectRevenue, baseCurrency)}{(project.feeType ?? 'monthly') === 'monthly' ? '/mo' : ''}</span>
                   <span className={marginColor(projectMargin)}>{projectMargin.toFixed(0)}% margin</span>
                 </div>
               )}

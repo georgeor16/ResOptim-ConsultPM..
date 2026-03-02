@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData } from '@/lib/store';
+import type { AppData } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CalendarRange, ChevronDown, ChevronRight } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -94,11 +95,15 @@ function getWorkingDaysInMonth(month: number, year: number): number {
 
 export default function ResourceAllocation() {
   const { isManagerOrAbove } = useAuth();
-  const data = useMemo(() => loadData(), []);
+  const [data, setData] = useState<AppData | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
 
-  const activeProjects = useMemo(() => data.projects.filter(p => p.status === 'Active'), [data]);
+  useEffect(() => {
+    loadData().then(setData);
+  }, []);
+
+  const activeProjects = useMemo(() => data?.projects.filter(p => p.status === 'Active') ?? [], [data]);
   const weeks = useMemo(() => getWeeks(16), []);
   const displayWeeks = useMemo(() => weeks.slice(0, 8), [weeks]);
   const months = useMemo(() => getMonths(weeks), [weeks]);
@@ -106,6 +111,11 @@ export default function ResourceAllocation() {
 
   if (!isManagerOrAbove) {
     return <div className="text-center py-12 text-muted-foreground">Access restricted</div>;
+  }
+  if (!data) {
+    return (
+      <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">Loading...</div>
+    );
   }
 
   const getUserWeekFTE = (userId: string, week: WeekInfo) => {

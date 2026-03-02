@@ -12,7 +12,7 @@ import TemplatePreview from '@/components/TemplatePreview';
 import { SUPPORTED_CURRENCIES, getBaseCurrency, setBaseCurrency, type CurrencyCode } from '@/lib/currency';
 import { useTheme } from 'next-themes';
 
-const TEMPLATABLE_CATEGORIES: ProjectCategory[] = ['Strategy', 'Research', 'Innovation Ecosystem', 'Quantum/Deep Tech', 'Scaleup Support'];
+const TEMPLATABLE_CATEGORIES: ProjectCategory[] = ['Scouting', 'Event', 'Full Report', 'Light Report', 'Other'];
 
 export default function SettingsPage() {
   const { isAdmin } = useAuth();
@@ -126,10 +126,10 @@ export default function SettingsPage() {
                 <Label className="text-xs">Base Reporting Currency</Label>
                 <p className="text-xs text-muted-foreground">All financial figures across Dashboard, Team, and Project views will be converted to this currency using daily FX rates from frankfurter.app.</p>
                 <Select value={baseCurrencyState} onValueChange={(v) => { setBaseCurrencyState(v as CurrencyCode); setBaseCurrency(v as CurrencyCode); }}>
-                  <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-48">{baseCurrencyState}</SelectTrigger>
                   <SelectContent>
                     {SUPPORTED_CURRENCIES.map(c => (
-                      <SelectItem key={c.code} value={c.code}>{c.symbol} {c.code} — {c.label}</SelectItem>
+                      <SelectItem key={c.code} value={c.code}>{c.code} — {c.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

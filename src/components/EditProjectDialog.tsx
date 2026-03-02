@@ -6,10 +6,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pencil } from 'lucide-react';
 import { updateItem } from '@/lib/store';
-import { SUPPORTED_CURRENCIES, getCurrencySymbol, type CurrencyCode } from '@/lib/currency';
+import { SUPPORTED_CURRENCIES, type CurrencyCode } from '@/lib/currency';
 import type { Project, ProjectCategory, ProjectStatus, Priority } from '@/lib/types';
 
-const CATEGORIES: ProjectCategory[] = ['Strategy', 'Research', 'Innovation Ecosystem', 'Quantum/Deep Tech', 'Scaleup Support', 'Report', 'Event', 'Scouting', 'Other'];
+const CATEGORIES: ProjectCategory[] = ['Scouting', 'Event', 'Full Report', 'Light Report', 'Other'];
 const STATUSES: ProjectStatus[] = ['Active', 'On Hold', 'Completed'];
 const PRIORITIES: Priority[] = ['High', 'Medium', 'Low'];
 
@@ -23,12 +23,13 @@ export default function EditProjectDialog({ project, onUpdated }: Props) {
   const [form, setForm] = useState({ ...project });
 
   const handleOpen = (isOpen: boolean) => {
-    if (isOpen) setForm({ ...project });
+    if (isOpen) setForm({ ...project, feeType: project.feeType ?? 'monthly', categoryOtherSpec: project.categoryOtherSpec ?? '' });
     setOpen(isOpen);
   };
 
-  const handleSubmit = () => {
-    updateItem('projects', form);
+  const handleSubmit = async () => {
+    if (form.category === 'Other' && !form.categoryOtherSpec?.trim()) return;
+    await updateItem('projects', form);
     setOpen(false);
     onUpdated();
   };
@@ -58,7 +59,7 @@ export default function EditProjectDialog({ project, onUpdated }: Props) {
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Category</Label>
-              <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v as ProjectCategory }))}>
+              <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v as ProjectCategory, categoryOtherSpec: v === 'Other' ? f.categoryOtherSpec : undefined }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
@@ -83,6 +84,16 @@ export default function EditProjectDialog({ project, onUpdated }: Props) {
                 </SelectContent>
               </Select>
             </div>
+            {form.category === 'Other' && (
+              <div className="space-y-1.5 col-span-3">
+                <Label className="text-xs">Specify (required for Other) *</Label>
+                <Input
+                  value={form.categoryOtherSpec ?? ''}
+                  onChange={e => setForm(f => ({ ...f, categoryOtherSpec: e.target.value }))}
+                  placeholder="e.g. Advisory, Training"
+                />
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -98,20 +109,29 @@ export default function EditProjectDialog({ project, onUpdated }: Props) {
             <div className="space-y-1.5">
               <Label className="text-xs">Currency</Label>
               <Select value={form.currency} onValueChange={v => setForm(f => ({ ...f, currency: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-[90px]">{form.currency}</SelectTrigger>
                 <SelectContent>
                   {SUPPORTED_CURRENCIES.map(c => (
-                    <SelectItem key={c.code} value={c.code}>{c.symbol} {c.code}</SelectItem>
+                    <SelectItem key={c.code} value={c.code}>{c.code} — {c.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Monthly Fee ({getCurrencySymbol(form.currency as CurrencyCode)})</Label>
-              <Input type="number" value={form.monthlyFee} onChange={e => setForm(f => ({ ...f, monthlyFee: Number(e.target.value) }))} />
+              <Label className="text-xs">Fee</Label>
+              <div className="flex gap-2 flex-wrap">
+                <Select value={form.feeType ?? 'monthly'} onValueChange={v => setForm(f => ({ ...f, feeType: v as 'monthly' | 'project' }))}>
+                  <SelectTrigger className="w-[95px] shrink-0">{(form.feeType ?? 'monthly') === 'monthly' ? 'Monthly' : 'Project'}</SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="project">Project</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input type="number" value={form.monthlyFee} onChange={e => setForm(f => ({ ...f, monthlyFee: Number(e.target.value) }))} className="flex-1 min-w-[160px] w-40" />
+              </div>
             </div>
           </div>
-          <Button onClick={handleSubmit} disabled={!form.name || !form.client} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
+          <Button onClick={handleSubmit} disabled={!form.name || !form.client || (form.category === 'Other' && !form.categoryOtherSpec?.trim())} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
             Save Changes
           </Button>
         </div>

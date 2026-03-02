@@ -17,9 +17,9 @@ export function createSeedData(): AppData {
   const project3Id = genId();
 
   const projects = [
-    { id: project1Id, name: 'Quantum Computing Strategy', client: 'TechCorp Europe', category: 'Quantum/Deep Tech' as const, priority: 'High' as const, status: 'Active' as const, startDate: '2026-01-15', endDate: '2026-06-30', monthlyFee: 45000, currency: 'USD', createdAt: '2026-01-10' },
-    { id: project2Id, name: 'Innovation Ecosystem Mapping', client: 'GovTech Agency', category: 'Innovation Ecosystem' as const, priority: 'Medium' as const, status: 'Active' as const, startDate: '2026-02-01', endDate: '2026-05-31', monthlyFee: 30000, currency: 'USD', createdAt: '2026-01-25' },
-    { id: project3Id, name: 'Scaleup Growth Accelerator', client: 'VentureHub', category: 'Scaleup Support' as const, priority: 'Low' as const, status: 'On Hold' as const, startDate: '2026-03-01', endDate: '2026-08-31', monthlyFee: 25000, currency: 'AUD', createdAt: '2026-02-15' },
+    { id: project1Id, name: 'Quantum Computing Strategy', client: 'TechCorp Europe', category: 'Full Report' as const, priority: 'High' as const, status: 'Active' as const, startDate: '2026-01-15', endDate: '2026-06-30', feeType: 'monthly' as const, monthlyFee: 45000, currency: 'USD', createdAt: '2026-01-10' },
+    { id: project2Id, name: 'Innovation Ecosystem Mapping', client: 'GovTech Agency', category: 'Event' as const, priority: 'Medium' as const, status: 'Active' as const, startDate: '2026-02-01', endDate: '2026-05-31', feeType: 'project' as const, monthlyFee: 120000, currency: 'USD', createdAt: '2026-01-25' },
+    { id: project3Id, name: 'Scaleup Growth Accelerator', client: 'VentureHub', category: 'Other' as const, categoryOtherSpec: 'Advisory', priority: 'Low' as const, status: 'On Hold' as const, startDate: '2026-03-01', endDate: '2026-08-31', feeType: 'monthly' as const, monthlyFee: 25000, currency: 'AUD', createdAt: '2026-02-15' },
   ];
 
   const allocations = [

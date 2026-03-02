@@ -1,8 +1,8 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { loadData, updateItem, addItem, deleteItem, genId } from '@/lib/store';
-import type { Task, TaskStatus } from '@/lib/types';
+import { loadData, updateItem, addItem, deleteItem, deleteProject, genId } from '@/lib/store';
+import type { AppData, Task, TaskStatus } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,10 +13,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Plus, Clock, Users, DollarSign, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import AddMemberDialog from '@/components/AddMemberDialog';
 import MultiSelectAssignee from '@/components/MultiSelectAssignee';
 import EditProjectDialog from '@/components/EditProjectDialog';
-import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, type CurrencyCode, type FxRates } from '@/lib/currency';
+import { getBaseCurrency, convertCurrency, formatMoney, formatMoneyWithCode, refreshFxRates, loadFxRates, type CurrencyCode, type FxRates } from '@/lib/currency';
+import { computeTaskFtePercent, computePhaseFtePercent } from '@/lib/fte';
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -27,15 +38,26 @@ export default function ProjectDetail() {
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', description: '', phaseId: '', assigneeIds: [] as string[], estimatedHours: 0, startDate: '', dueDate: '' });
   const baseCurrency = getBaseCurrency();
   const [rates, setRates] = useState<FxRates>(loadFxRates());
 
+  const [data, setData] = useState<AppData | null>(null);
+
+  useEffect(() => {
+    loadData().then(setData);
+  }, [refreshKey]);
   useEffect(() => {
     refreshFxRates().then(setRates);
   }, []);
 
-  const data = useMemo(() => loadData(), [refreshKey]);
+  if (!data) {
+    return (
+      <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">Loading...</div>
+    );
+  }
+
   const project = data.projects.find(p => p.id === id);
 
   if (!project) {
@@ -83,15 +105,15 @@ export default function ProjectDetail() {
     });
   };
 
-  const handleStatusChange = (task: Task, status: TaskStatus) => {
-    updateItem('tasks', { ...task, status });
+  const handleStatusChange = async (task: Task, status: TaskStatus) => {
+    await updateItem('tasks', { ...task, status });
     setRefreshKey(k => k + 1);
   };
 
-  const handleCreateTask = () => {
+  const handleCreateTask = async () => {
     if (!newTask.title || !newTask.phaseId) return;
     const phaseTasks = tasks.filter(t => t.phaseId === newTask.phaseId);
-    addItem('tasks', {
+    await addItem('tasks', {
       id: genId(),
       projectId: project.id,
       phaseId: newTask.phaseId,
@@ -109,11 +131,12 @@ export default function ProjectDetail() {
     setRefreshKey(k => k + 1);
   };
 
-  const handleDeleteTask = (taskId: string) => {
-    deleteItem('tasks', taskId);
-    // Also delete related timelogs and subtasks
-    data.timelogs.filter(t => t.taskId === taskId).forEach(t => deleteItem('timelogs', t.id));
-    data.subtasks.filter(s => s.taskId === taskId).forEach(s => deleteItem('subtasks', s.id));
+  const handleDeleteTask = async (taskId: string) => {
+    const timelogsToDelete = data.timelogs.filter(t => t.taskId === taskId);
+    const subtasksToDelete = data.subtasks.filter(s => s.taskId === taskId);
+    for (const t of timelogsToDelete) await deleteItem('timelogs', t.id);
+    for (const s of subtasksToDelete) await deleteItem('subtasks', s.id);
+    await deleteItem('tasks', taskId);
     setRefreshKey(k => k + 1);
   };
 
@@ -122,9 +145,9 @@ export default function ProjectDetail() {
     setEditDialogOpen(true);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingTask) return;
-    updateItem('tasks', editingTask);
+    await updateItem('tasks', editingTask);
     setEditDialogOpen(false);
     setEditingTask(null);
     setRefreshKey(k => k + 1);
@@ -160,7 +183,7 @@ export default function ProjectDetail() {
               {project.status}
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground">{project.client} · {project.category}</p>
+          <p className="text-sm text-muted-foreground">{project.client} · {project.category}{project.category === 'Other' && project.categoryOtherSpec ? ` (${project.categoryOtherSpec})` : ''}</p>
         </div>
         {isManagerOrAbove && (
           <div className="flex items-center gap-2">
@@ -171,6 +194,14 @@ export default function ProjectDetail() {
               onAdded={() => setRefreshKey(k => k + 1)}
             />
             <EditProjectDialog project={project} onUpdated={() => setRefreshKey(k => k + 1)} />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => setDeleteConfirmOpen(true)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
         )}
       </div>
@@ -208,15 +239,15 @@ export default function ProjectDetail() {
               <>
                 <Card>
                   <CardContent className="p-4">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium mb-1"><DollarSign className="h-3.5 w-3.5" />Monthly Fee</div>
-                    <p className="text-xl font-bold">{formatMoney(projectRevenue, baseCurrency)}</p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium mb-1"><DollarSign className="h-3.5 w-3.5" />Fee</div>
+                    <p className="text-xl font-bold">{formatMoneyWithCode(projectRevenue, baseCurrency as CurrencyCode)}</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-4">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium mb-1"><DollarSign className="h-3.5 w-3.5" />Internal Margin</div>
                     <p className={`text-xl font-bold ${marginColor}`}>{margin.toFixed(1)}%</p>
-                    <p className="text-xs text-muted-foreground">{formatMoney(projectRevenue - projectCost, baseCurrency)}</p>
+                    <p className="text-xs text-muted-foreground">{formatMoneyWithCode(projectRevenue - projectCost, baseCurrency as CurrencyCode)}</p>
                   </CardContent>
                 </Card>
               </>
@@ -358,6 +389,8 @@ export default function ProjectDetail() {
               const phaseTasks = visibleTasks.filter(t => t.phaseId === phase.id).sort((a, b) => a.order - b.order);
               const phDone = phaseTasks.filter(t => t.status === 'Done').length;
               const expanded = expandedPhases.has(phase.id);
+              const phaseFte = computePhaseFtePercent(phaseTasks);
+              const plannedFte = phase.plannedFtePercent;
 
               return (
                 <Card key={phase.id}>
@@ -369,6 +402,16 @@ export default function ProjectDetail() {
                       {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       <span className="font-semibold">{phase.name}</span>
                       <span className="text-xs text-muted-foreground">{phDone}/{phaseTasks.length} done</span>
+                      {typeof plannedFte === 'number' && (
+                        <Badge variant="outline" className="text-[10px] bg-secondary/60 text-secondary-foreground border-border">
+                          Plan {plannedFte}% FTE
+                        </Badge>
+                      )}
+                      {phaseTasks.length > 0 && (
+                        <Badge variant="outline" className="text-[10px] bg-accent/10 text-accent border-accent/20">
+                          {phaseFte}% FTE
+                        </Badge>
+                      )}
                     </div>
                   </button>
                   {expanded && (
@@ -380,6 +423,7 @@ export default function ProjectDetail() {
                           const assignees = data.users.filter(u => (task.assigneeIds || []).includes(u.id));
                           const taskLogs = timelogs.filter(t => t.taskId === task.id).reduce((s, t) => s + t.hours, 0);
                           const isOverdue = new Date(task.dueDate) < new Date() && task.status !== 'Done';
+                          const taskFte = computeTaskFtePercent(task.estimatedHours, task.startDate, task.dueDate);
 
                           return (
                             <div key={task.id} className={`flex items-center justify-between px-5 py-3 ${isOverdue ? 'bg-danger/5' : ''}`}>
@@ -419,9 +463,14 @@ export default function ProjectDetail() {
                                     ))}
                                   </div>
                                 )}
-                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                  <Clock className="h-3 w-3" />
-                                  {taskLogs}/{task.estimatedHours}h
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <span className="flex items-center gap-1">
+                                    <Clock className="h-3 w-3" />
+                                    {taskLogs}/{task.estimatedHours}h
+                                  </span>
+                                  <Badge variant="outline" className="text-[10px] font-normal bg-accent/5 text-accent border-accent/20">
+                                    {taskFte}% FTE
+                                  </Badge>
                                 </div>
                                 {isOverdue && (
                                   <Badge variant="outline" className="bg-danger/10 text-danger border-danger/20 text-xs">
@@ -519,9 +568,33 @@ export default function ProjectDetail() {
         </Dialog>
 
         <TabsContent value="gantt" className="mt-4">
-          <GanttView phases={phases} tasks={visibleTasks} users={data.users} projectStart={project.startDate} projectEnd={project.endDate} />
+          <GanttView key={refreshKey} phases={phases} tasks={visibleTasks} users={data.users} projectStart={project.startDate} projectEnd={project.endDate} />
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete project</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{project.name}&quot;? This will remove the project, its phases, tasks, allocations, and related data. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                await deleteProject(project.id);
+                setDeleteConfirmOpen(false);
+                navigate('/projects');
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

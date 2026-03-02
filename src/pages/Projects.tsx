@@ -1,17 +1,29 @@
 import { useAuth } from '@/contexts/AuthContext';
-import { loadData } from '@/lib/store';
-import { useMemo } from 'react';
+import { loadData, deleteProject } from '@/lib/store';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { AppData } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Search, ArrowUpDown, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
-import { useState } from 'react';
-import type { Project } from '@/lib/types';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import type { Project, ProjectCategory } from '@/lib/types';
+
+const PROJECT_CATEGORIES: ProjectCategory[] = ['Scouting', 'Event', 'Full Report', 'Light Report', 'Other'];
 
 const priorityColor = (p: string) => {
   switch (p) {
@@ -34,12 +46,18 @@ const statusColor = (s: string) => {
 export default function Projects() {
   const { isManagerOrAbove, currentUser } = useAuth();
   const navigate = useNavigate();
-  const data = useMemo(() => loadData(), []);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [data, setData] = useState<AppData | null>(null);
   const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    loadData().then(setData);
+  }, [refreshKey]);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
   const toggleSort = (key: string) => {
     if (sortKey === key) {
@@ -56,6 +74,12 @@ export default function Projects() {
       ? <ArrowUp className="h-3.5 w-3.5 ml-1 text-foreground" />
       : <ArrowDown className="h-3.5 w-3.5 ml-1 text-foreground" />;
   };
+
+  if (!data) {
+    return (
+      <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">Loading...</div>
+    );
+  }
 
   const allProjects = isManagerOrAbove
     ? data.projects
@@ -95,7 +119,7 @@ export default function Projects() {
     }
   });
 
-  const categories = [...new Set(data.projects.map(p => p.category))];
+  const categories = PROJECT_CATEGORIES;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -140,7 +164,7 @@ export default function Projects() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Categories</SelectItem>
-            {categories.map(c => (
+            {PROJECT_CATEGORIES.map(c => (
               <SelectItem key={c} value={c}>{c}</SelectItem>
             ))}
           </SelectContent>
@@ -175,6 +199,7 @@ export default function Projects() {
                 <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort('timeline')}>
                   <span className="flex items-center justify-end">Timeline<SortIcon column="timeline" /></span>
                 </TableHead>
+                {isManagerOrAbove && <TableHead className="w-[60px] text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -199,7 +224,7 @@ export default function Projects() {
                     <TableCell>
                       <Badge variant="outline" className={priorityColor(project.priority)}>{project.priority}</Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{project.category}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{project.category}{project.category === 'Other' && project.categoryOtherSpec ? ` (${project.categoryOtherSpec})` : ''}</TableCell>
                     <TableCell>
                       <div className="flex -space-x-2">
                         {assignedUsers.slice(0, 3).map(user => user && (
@@ -228,12 +253,24 @@ export default function Projects() {
                       {' – '}
                       {new Date(project.endDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
                     </TableCell>
+                    {isManagerOrAbove && (
+                      <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => setProjectToDelete(project)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={isManagerOrAbove ? 9 : 8} className="text-center py-8 text-muted-foreground">
                     No projects match your filters
                   </TableCell>
                 </TableRow>
@@ -242,6 +279,32 @@ export default function Projects() {
           </Table>
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!projectToDelete} onOpenChange={open => !open && setProjectToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete project</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{projectToDelete?.name}&quot;? This will remove the project, its phases, tasks, allocations, and related data. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (projectToDelete) {
+                  await deleteProject(projectToDelete.id);
+                  setProjectToDelete(null);
+                  setRefreshKey(k => k + 1);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

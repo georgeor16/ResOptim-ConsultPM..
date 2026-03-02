@@ -99,6 +99,12 @@ export function formatMoney(amount: number, currency: CurrencyCode): string {
   return `${symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
+/** Format amount with currency code only (e.g. "30,000 USD") for display where wording is only in dropdowns. */
+export function formatMoneyWithCode(amount: number, currency: CurrencyCode): string {
+  const rounded = Math.round(amount);
+  return `${rounded.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ${currency}`;
+}
+
 // --- Base currency setting ---
 
 const BASE_CURRENCY_KEY = 'consulting_pm_base_currency';

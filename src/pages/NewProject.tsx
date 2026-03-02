@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { loadData, saveData, genId } from '@/lib/store';
-import type { ProjectCategory, ProjectStatus, Priority, Allocation, Phase, Project } from '@/lib/types';
+import { loadData, saveData, saveDataToSupabase, genId } from '@/lib/store';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import type { AppData } from '@/lib/types';
+import type { ProjectCategory, ProjectStatus, Priority, Allocation, Phase, Project, FeeType } from '@/lib/types';
 import { SUPPORTED_CURRENCIES } from '@/lib/currency';
 import { getTemplateForCategory } from '@/lib/templates';
 import TemplatePreview from '@/components/TemplatePreview';
@@ -16,10 +18,23 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { CalendarIcon, ArrowLeft, Plus, X } from 'lucide-react';
 import { format, addWeeks } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { Switch } from '@/components/ui/switch';
 
-const categories: ProjectCategory[] = ['Strategy', 'Research', 'Innovation Ecosystem', 'Quantum/Deep Tech', 'Scaleup Support', 'Report', 'Event', 'Scouting', 'Other'];
+const categories: ProjectCategory[] = ['Scouting', 'Event', 'Full Report', 'Light Report', 'Other'];
 const priorities: Priority[] = ['High', 'Medium', 'Low'];
 const statuses: ProjectStatus[] = ['Active', 'On Hold', 'Completed'];
+
+const HOURS_PER_WEEK = 40;
+const HOURS_PER_MONTH = 160; // 4 weeks
+
+const effortUnitToHours: Record<string, number> = {
+  hours: 1,
+  days: 8,
+  weeks: HOURS_PER_WEEK,
+  month: HOURS_PER_MONTH,
+};
+const EFFORT_UNITS = ['hours', 'days', 'weeks', 'month'] as const;
+type EffortUnit = (typeof EFFORT_UNITS)[number];
 
 interface TeamAllocation {
   userId: string;
@@ -32,31 +47,59 @@ interface PhaseEntry {
   name: string;
   durationWeeks: number;
   ftePercent: number;
+  effortValue: number;
+  effortUnit: EffortUnit;
+  autoFte: boolean;
 }
 
 export default function NewProject() {
   const navigate = useNavigate();
   const { isManagerOrAbove } = useAuth();
-  const data = loadData();
+  const [data, setData] = useState<AppData | null>(null);
+
+  useEffect(() => {
+    loadData().then(setData);
+  }, []);
 
   const [name, setName] = useState('');
   const [client, setClient] = useState('');
-  const [category, setCategory] = useState<ProjectCategory>('Strategy');
+  const [category, setCategory] = useState<ProjectCategory>('Event');
+  const [categoryOtherSpec, setCategoryOtherSpec] = useState('');
   const [priority, setPriority] = useState<Priority>('Medium');
   const [status, setStatus] = useState<ProjectStatus>('Active');
   const [startDate, setStartDate] = useState<Date | undefined>();
   const [endDate, setEndDate] = useState<Date | undefined>();
-  const [monthlyFee, setMonthlyFee] = useState('');
+  const [feeType, setFeeType] = useState<FeeType>('monthly');
+  const [feeAmount, setFeeAmount] = useState('');
   const [projectCurrency, setProjectCurrency] = useState<string>('USD');
   const [allocations, setAllocations] = useState<TeamAllocation[]>([]);
   const [phaseEntries, setPhaseEntries] = useState<PhaseEntry[]>([]);
 
   const template = getTemplateForCategory(category);
 
+  const computePlannedFtePercent = (effortHours: number, durationWeeks: number) => {
+    const denom = Math.max(0.01, durationWeeks * HOURS_PER_WEEK);
+    return Math.round((effortHours / denom) * 100);
+  };
+
+  const normalizePhaseEntry = (p: PhaseEntry): PhaseEntry => {
+    if (!p.autoFte) return p;
+    const hoursPerUnit = effortUnitToHours[p.effortUnit] ?? 1;
+    const effortHours = (Number(p.effortValue) || 0) * hoursPerUnit;
+    return { ...p, ftePercent: computePlannedFtePercent(effortHours, Number(p.durationWeeks) || 0) };
+  };
+
   // Auto-fill when category changes to a templated one
   useEffect(() => {
     if (template) {
-      setPhaseEntries(template.phases.map(p => ({ ...p })));
+      setPhaseEntries(template.phases.map(p => normalizePhaseEntry({
+        name: p.name,
+        durationWeeks: p.durationWeeks,
+        ftePercent: p.ftePercent,
+        effortValue: Math.round((p.durationWeeks * HOURS_PER_WEEK * (p.ftePercent / 100)) * 10) / 10,
+        effortUnit: 'hours' as EffortUnit,
+        autoFte: true,
+      })));
       if (startDate) {
         setEndDate(addWeeks(startDate, template.timelineWeeks));
       } else {
@@ -79,6 +122,11 @@ export default function NewProject() {
   if (!isManagerOrAbove) {
     navigate('/');
     return null;
+  }
+  if (!data) {
+    return (
+      <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">Loading...</div>
+    );
   }
 
   const addAllocation = () => {
@@ -112,22 +160,27 @@ export default function NewProject() {
     const updated = [...phaseEntries];
     if (field === 'name') {
       updated[idx] = { ...updated[idx], name: value as string };
+    } else if (field === 'effortUnit') {
+      updated[idx] = normalizePhaseEntry({ ...updated[idx], effortUnit: value as EffortUnit });
+    } else if (field === 'autoFte') {
+      updated[idx] = normalizePhaseEntry({ ...updated[idx], autoFte: Boolean(value) });
     } else {
-      updated[idx] = { ...updated[idx], [field]: Number(value) };
+      updated[idx] = normalizePhaseEntry({ ...updated[idx], [field]: Number(value) });
     }
     setPhaseEntries(updated);
   };
 
   const addPhaseEntry = () => {
-    setPhaseEntries([...phaseEntries, { name: '', durationWeeks: 1, ftePercent: 50 }]);
+    setPhaseEntries([...phaseEntries, normalizePhaseEntry({ name: '', durationWeeks: 1, ftePercent: 50, effortValue: 20, effortUnit: 'hours', autoFte: true })]);
   };
 
   const removePhaseEntry = (idx: number) => {
     setPhaseEntries(phaseEntries.filter((_, i) => i !== idx));
   };
 
-  const handleSubmit = () => {
-    if (!name || !client || !startDate || !endDate || !monthlyFee) return;
+  const handleSubmit = async () => {
+    if (!name || !client || !startDate || !endDate || !feeAmount) return;
+    if (category === 'Other' && !categoryOtherSpec.trim()) return;
 
     const projectId = genId();
     const newProject: Project = {
@@ -135,11 +188,13 @@ export default function NewProject() {
       name,
       client,
       category,
+      ...(category === 'Other' && categoryOtherSpec.trim() ? { categoryOtherSpec: categoryOtherSpec.trim() } : {}),
       priority,
       status,
-      startDate: format(startDate, 'yyyy-MM-dd'),
-      endDate: format(endDate, 'yyyy-MM-dd'),
-      monthlyFee: parseFloat(monthlyFee),
+      startDate: format(startDate!, 'yyyy-MM-dd'),
+      endDate: format(endDate!, 'yyyy-MM-dd'),
+      feeType,
+      monthlyFee: parseFloat(feeAmount),
       currency: projectCurrency,
       createdAt: format(new Date(), 'yyyy-MM-dd'),
     };
@@ -153,23 +208,34 @@ export default function NewProject() {
       billableHourlyRate: a.billableHourlyRate,
     }));
 
-    const newPhases: Phase[] = phaseEntries.map((p, i) => ({
-      id: genId(),
-      projectId,
-      name: p.name,
-      order: i,
-    }));
+    const newPhases: Phase[] = phaseEntries.map((p, i) => {
+      const hoursPerUnit = effortUnitToHours[p.effortUnit] ?? 1;
+      const effortHours = (Number(p.effortValue) || 0) * hoursPerUnit;
+      return {
+        id: genId(),
+        projectId,
+        name: p.name,
+        order: i,
+        plannedDurationWeeks: p.durationWeeks,
+        plannedEffortHours: effortHours,
+        plannedFtePercent: p.ftePercent,
+      };
+    });
 
-    const current = loadData();
+    const current = await loadData();
     current.projects.push(newProject);
     current.allocations.push(...newAllocations);
     current.phases.push(...newPhases);
-    saveData(current);
+    if (isSupabaseConfigured) {
+      await saveDataToSupabase(current);
+    } else {
+      saveData(current);
+    }
 
     navigate(`/projects/${projectId}`);
   };
 
-  const isValid = name && client && startDate && endDate && monthlyFee;
+  const isValid = name && client && startDate && endDate && feeAmount && (category !== 'Other' || categoryOtherSpec.trim());
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
@@ -226,6 +292,16 @@ export default function NewProject() {
                 </SelectContent>
               </Select>
             </div>
+            {category === 'Other' && (
+              <div className="space-y-2 col-span-full">
+                <Label>Specify (required for Other) *</Label>
+                <Input
+                  value={categoryOtherSpec}
+                  onChange={e => setCategoryOtherSpec(e.target.value)}
+                  placeholder="e.g. Advisory, Training"
+                />
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-4">
@@ -258,17 +334,24 @@ export default function NewProject() {
               </Popover>
             </div>
             <div className="space-y-2">
-              <Label>Monthly Fee *</Label>
-              <div className="flex gap-2">
+              <Label>Fee *</Label>
+              <div className="flex gap-2 items-center flex-wrap">
                 <Select value={projectCurrency} onValueChange={setProjectCurrency}>
-                  <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="w-[90px] shrink-0">{projectCurrency}</SelectTrigger>
                   <SelectContent>
                     {SUPPORTED_CURRENCIES.map(c => (
-                      <SelectItem key={c.code} value={c.code}>{c.symbol} {c.code}</SelectItem>
+                      <SelectItem key={c.code} value={c.code}>{c.code} — {c.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <Input type="number" value={monthlyFee} onChange={e => setMonthlyFee(e.target.value)} placeholder="e.g. 30000" />
+                <Select value={feeType} onValueChange={(v) => setFeeType(v as FeeType)}>
+                  <SelectTrigger className="w-[110px] shrink-0">{feeType === 'monthly' ? 'Monthly' : 'Project'}</SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="project">Project</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input type="number" value={feeAmount} onChange={e => setFeeAmount(e.target.value)} placeholder={feeType === 'monthly' ? 'e.g. 30000' : 'e.g. 150000'} className="min-w-[160px] w-40 flex-1" />
               </div>
             </div>
           </div>
@@ -291,17 +374,40 @@ export default function NewProject() {
             <p className="text-sm text-muted-foreground text-center py-6">No phases defined. Select a templated category or add manually.</p>
           ) : (
             <div className="space-y-3">
-              <div className="grid grid-cols-[1fr_100px_100px_40px] gap-3 text-xs font-medium text-muted-foreground px-1">
+              <div className="grid grid-cols-[1fr_100px_1fr_130px_40px] gap-3 text-xs font-medium text-muted-foreground px-1">
                 <span>Phase Name</span>
-                <span>Duration (wks)</span>
-                <span>FTE %</span>
+                <span>Duration</span>
+                <span>Effort</span>
+                <span>FTE % · Auto</span>
                 <span />
               </div>
               {phaseEntries.map((phase, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_100px_100px_40px] gap-3 items-center">
+                <div key={idx} className="grid grid-cols-[1fr_100px_1fr_130px_40px] gap-3 items-center">
                   <Input value={phase.name} onChange={e => updatePhaseEntry(idx, 'name', e.target.value)} placeholder="Phase name" />
                   <Input type="number" min={0.5} step={0.5} value={phase.durationWeeks} onChange={e => updatePhaseEntry(idx, 'durationWeeks', e.target.value)} />
-                  <Input type="number" min={0} max={100} value={phase.ftePercent} onChange={e => updatePhaseEntry(idx, 'ftePercent', e.target.value)} />
+                  <div className="flex gap-2 min-w-0">
+                    <Input type="number" min={0} step={0.5} value={phase.effortValue} onChange={e => updatePhaseEntry(idx, 'effortValue', e.target.value)} className="min-w-0" />
+                    <Select value={phase.effortUnit} onValueChange={v => updatePhaseEntry(idx, 'effortUnit', v)}>
+                      <SelectTrigger className="w-[88px] shrink-0"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {EFFORT_UNITS.map(u => (
+                          <SelectItem key={u} value={u}>{u === 'month' ? 'month' : u}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={phase.ftePercent}
+                      disabled={phase.autoFte}
+                      onChange={e => updatePhaseEntry(idx, 'ftePercent', e.target.value)}
+                      className="w-16"
+                    />
+                    <Switch checked={phase.autoFte} onCheckedChange={checked => updatePhaseEntry(idx, 'autoFte', checked)} title={phase.autoFte ? 'Auto FTE on' : 'Auto FTE off'} />
+                  </div>
                   <Button variant="ghost" size="icon" onClick={() => removePhaseEntry(idx)}>
                     <X className="h-4 w-4 text-muted-foreground" />
                   </Button>

@@ -4,9 +4,9 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { useAuth } from '@/contexts/AuthContext';
 
 export function Layout({ children }: { children: ReactNode }) {
-  const { currentUser } = useAuth();
+  const { currentUser, dataLoaded } = useAuth();
 
-  if (!currentUser) {
+  if (!dataLoaded || !currentUser) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="animate-pulse text-muted-foreground">Loading...</div>

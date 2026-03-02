@@ -2,7 +2,9 @@
 
 export type Role = 'admin' | 'manager' | 'member';
 
-export type ProjectCategory = 'Strategy' | 'Research' | 'Innovation Ecosystem' | 'Quantum/Deep Tech' | 'Scaleup Support' | 'Report' | 'Event' | 'Scouting' | 'Other';
+export type ProjectCategory = 'Scouting' | 'Event' | 'Full Report' | 'Light Report' | 'Other';
+
+export type FeeType = 'monthly' | 'project';
 export type ProjectStatus = 'Active' | 'On Hold' | 'Completed';
 export type Priority = 'High' | 'Medium' | 'Low';
 export type TaskStatus = 'To Do' | 'In Progress' | 'Blocked' | 'Done';
@@ -23,11 +25,13 @@ export interface Project {
   name: string;
   client: string;
   category: ProjectCategory;
+  categoryOtherSpec?: string; // required when category is Other
   priority: Priority;
   status: ProjectStatus;
   startDate: string;
   endDate: string;
-  monthlyFee: number;
+  feeType?: FeeType; // 'monthly' | 'project'; default monthly
+  monthlyFee: number; // amount: monthly fee or total project fee depending on feeType
   currency: string; // CurrencyCode
   createdAt: string;
 }
@@ -46,6 +50,9 @@ export interface Phase {
   projectId: string;
   name: string;
   order: number;
+  plannedDurationWeeks?: number;
+  plannedEffortHours?: number;
+  plannedFtePercent?: number;
 }
 
 export interface Task {

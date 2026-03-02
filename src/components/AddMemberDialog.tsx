@@ -31,9 +31,9 @@ export default function AddMemberDialog({ projectId, projectCurrency, availableU
     }));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.userId) return;
-    addItem('allocations', {
+    await addItem('allocations', {
       id: genId(),
       projectId,
       userId: form.userId,

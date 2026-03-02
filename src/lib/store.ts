@@ -1,50 +1,154 @@
 import type { AppData } from './types';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 const STORAGE_KEY = 'consulting_pm_data';
 
-export function loadData(): AppData {
+// ---- Helpers for Supabase (camelCase <-> snake_case) ----
+function toSnakeCase(str: string): string {
+  return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+}
+function toCamelCase(str: string): string {
+  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+function mapKeys<T extends Record<string, unknown>>(obj: T, fn: (k: string) => string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined && v !== null) out[fn(k)] = v;
+  }
+  return out;
+}
+function rowToApp<T extends Record<string, unknown>>(row: Record<string, unknown>): T {
+  return mapKeys(row as Record<string, unknown>, toCamelCase) as T;
+}
+function appToRow<T extends Record<string, unknown>>(item: T): Record<string, unknown> {
+  return mapKeys(item as Record<string, unknown>, toSnakeCase);
+}
+
+const TABLE_KEYS: (keyof AppData)[] = ['users', 'projects', 'allocations', 'phases', 'tasks', 'subtasks', 'timelogs', 'alerts'];
+
+async function loadFromSupabase(): Promise<AppData> {
+  if (!supabase) return loadFromLocalSync();
+  const empty: AppData = { users: [], projects: [], allocations: [], phases: [], tasks: [], subtasks: [], timelogs: [], alerts: [] };
+  const result = { ...empty };
+  for (const key of TABLE_KEYS) {
+    const table = key === 'subtasks' ? 'subtasks' : key;
+    const { data, error } = await supabase.from(table).select('*');
+    if (error) {
+      console.error(`Supabase load ${table}:`, error);
+      return loadFromLocalSync();
+    }
+    (result[key] as unknown[]) = (data || []).map(row => rowToApp(row));
+  }
+  return result;
+}
+
+function loadFromLocalSync(): AppData {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
     try {
       return JSON.parse(raw);
     } catch {
-      // corrupted, will re-seed
+      // corrupted
     }
   }
   return { users: [], projects: [], allocations: [], phases: [], tasks: [], subtasks: [], timelogs: [], alerts: [] };
+}
+
+/** Load all app data. Uses Supabase if configured, else localStorage. */
+export async function loadData(): Promise<AppData> {
+  if (isSupabaseConfigured) return loadFromSupabase();
+  return Promise.resolve(loadFromLocalSync());
 }
 
 export function saveData(data: AppData): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
-export function isSeeded(): boolean {
-  const data = loadData();
+/** Save full dataset to Supabase (e.g. seed). Uses upsert by id. */
+export async function saveDataToSupabase(data: AppData): Promise<void> {
+  if (!supabase) {
+    saveData(data);
+    return;
+  }
+  for (const key of TABLE_KEYS) {
+    const table = key === 'subtasks' ? 'subtasks' : key;
+    const rows = (data[key] as Record<string, unknown>[]).map(item => appToRow(item));
+    if (rows.length === 0) continue;
+    const { error } = await supabase.from(table).upsert(rows, { onConflict: 'id' });
+    if (error) throw new Error(`Supabase save ${table}: ${error.message}`);
+  }
+}
+
+export async function isSeeded(): Promise<boolean> {
+  const data = await loadData();
   return data.users.length > 0;
 }
 
-// Generic CRUD helpers
-export function addItem<T extends { id: string }>(key: keyof AppData, item: T): void {
-  const data = loadData();
-  (data[key] as unknown as T[]).push(item);
-  saveData(data);
+function getTable(key: keyof AppData): string {
+  return key === 'subtasks' ? 'subtasks' : key;
 }
 
-export function updateItem<T extends { id: string }>(key: keyof AppData, item: T): void {
-  const data = loadData();
+/** Add one row. Uses Supabase if configured, else localStorage. */
+export async function addItem<T extends { id: string }>(key: keyof AppData, item: T): Promise<void> {
+  if (supabase) {
+    const row = appToRow(item as unknown as Record<string, unknown>);
+    const { error } = await supabase.from(getTable(key)).insert(row);
+    if (error) throw new Error(`Supabase add ${key}: ${error.message}`);
+    return;
+  }
+  const data = loadFromLocalSync();
+  (data[key] as unknown as T[]).push(item);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+/** Update one row by id. */
+export async function updateItem<T extends { id: string }>(key: keyof AppData, item: T): Promise<void> {
+  if (supabase) {
+    const row = appToRow(item as unknown as Record<string, unknown>);
+    const { error } = await supabase.from(getTable(key)).update(row).eq('id', item.id);
+    if (error) throw new Error(`Supabase update ${key}: ${error.message}`);
+    return;
+  }
+  const data = loadFromLocalSync();
   const arr = data[key] as unknown as T[];
   const idx = arr.findIndex(i => i.id === item.id);
   if (idx !== -1) arr[idx] = item;
-  saveData(data);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
-export function deleteItem(key: keyof AppData, id: string): void {
-  const data = loadData();
+/** Delete one row by id. */
+export async function deleteItem(key: keyof AppData, id: string): Promise<void> {
+  if (supabase) {
+    const { error } = await supabase.from(getTable(key)).delete().eq('id', id);
+    if (error) throw new Error(`Supabase delete ${key}: ${error.message}`);
+    return;
+  }
+  const data = loadFromLocalSync();
   const arr = data[key] as unknown as { id: string }[];
   const filtered = arr.filter(i => i.id !== id);
   (data[key] as unknown as { id: string }[]).length = 0;
   (data[key] as unknown as { id: string }[]).push(...filtered);
-  saveData(data);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+/** Delete a project and related rows. With Supabase, project delete cascades. */
+export async function deleteProject(projectId: string): Promise<void> {
+  if (supabase) {
+    const { error } = await supabase.from('projects').delete().eq('id', projectId);
+    if (error) throw new Error(`Supabase deleteProject: ${error.message}`);
+    return;
+  }
+  const data = loadFromLocalSync();
+  const projectTasks = data.tasks.filter(t => t.projectId === projectId);
+  const taskIds = new Set(projectTasks.map(t => t.id));
+  data.subtasks = data.subtasks.filter(s => !taskIds.has(s.taskId));
+  data.timelogs = data.timelogs.filter(t => t.projectId !== projectId);
+  data.tasks = data.tasks.filter(t => t.projectId !== projectId);
+  data.phases = data.phases.filter(p => p.projectId !== projectId);
+  data.allocations = data.allocations.filter(a => a.projectId !== projectId);
+  data.alerts = data.alerts.filter(a => a.projectId !== projectId);
+  data.projects = data.projects.filter(p => p.id !== projectId);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
 export function genId(): string {
