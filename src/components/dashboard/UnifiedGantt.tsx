@@ -4,9 +4,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { AppData } from '@/lib/types';
+import { FileDown } from 'lucide-react';
 
 interface Props {
   data: AppData;
+  chartRef?: React.RefObject<HTMLElement | null>;
+  onExportClick?: () => void;
 }
 
 const STATUS_COLORS: Record<string, { bg: string; border: string; label: string }> = {
@@ -21,7 +24,7 @@ const PRIORITY_PATTERNS: Record<string, string> = {
   Low: 'border-l-4 border-l-priority-low',
 };
 
-export default function UnifiedGantt({ data }: Props) {
+export default function UnifiedGantt({ data, chartRef, onExportClick }: Props) {
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -88,10 +91,21 @@ export default function UnifiedGantt({ data }: Props) {
   if (projects.length === 0) return null;
 
   return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-foreground text-sm">Project Timeline</h3>
+    <div ref={chartRef}>
+      <Card>
+        <CardContent className="p-5 relative">
+          {onExportClick && (
+            <button
+              type="button"
+              onClick={onExportClick}
+              className="absolute top-2 right-2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm border border-white/10 text-muted-foreground hover:text-foreground hover:bg-background/90 flex items-center justify-center shadow-sm transition-colors z-10"
+              aria-label="Export Gantt"
+            >
+              <FileDown className="h-4 w-4" />
+            </button>
+          )}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-foreground text-sm">Project Timeline</h3>
           {/* Legend */}
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-3 text-xs">
@@ -192,7 +206,8 @@ export default function UnifiedGantt({ data }: Props) {
             </TooltipProvider>
           </div>
         </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

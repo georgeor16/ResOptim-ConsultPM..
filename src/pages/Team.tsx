@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { loadData, addItem, deleteItem, genId } from '@/lib/store';
-import type { AppData } from '@/lib/types';
+import { loadData, addItem, updateItem, deleteItem, genId } from '@/lib/store';
+import type { AppData, CalendarProfile, User } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Calendar } from 'lucide-react';
+import { CalendarProfileEditor } from '@/components/CalendarProfileEditor';
 import { getBaseCurrency, convertCurrency, formatMoney, refreshFxRates, loadFxRates, getCurrencySymbol, SUPPORTED_CURRENCIES, type CurrencyCode, type FxRates } from '@/lib/currency';
 import type { Role } from '@/lib/types';
 
@@ -25,6 +26,7 @@ export default function Team() {
   const baseCurrency = getBaseCurrency();
   const [rates, setRates] = useState<FxRates>(loadFxRates());
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [calendarUser, setCalendarUser] = useState<User | null>(null);
   const [form, setForm] = useState({
     name: '', email: '', role: 'member' as Role,
     annualSalary: '', currency: 'USD' as CurrencyCode,
@@ -238,6 +240,15 @@ export default function Team() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="h-7 w-7 text-muted-foreground"
+                          title="Edit calendar"
+                          onClick={() => setCalendarUser(user)}
+                        >
+                          <Calendar className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-7 w-7 text-muted-foreground hover:text-destructive"
                           onClick={async () => {
                             await deleteItem('users', user.id);
@@ -256,6 +267,25 @@ export default function Team() {
           </table>
         </CardContent>
       </Card>
+
+      {calendarUser && (
+        <Dialog open={!!calendarUser} onOpenChange={open => !open && setCalendarUser(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Calendar — {calendarUser.name}</DialogTitle>
+            </DialogHeader>
+            <CalendarProfileEditor
+              user={data.users.find(u => u.id === calendarUser.id) ?? calendarUser}
+              onSave={async (calendar: CalendarProfile) => {
+                await updateItem('users', { ...calendarUser, calendar });
+                setCalendarUser(null);
+                await refreshUsers();
+                setRefreshKey(k => k + 1);
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

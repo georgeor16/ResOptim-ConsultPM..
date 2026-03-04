@@ -1,4 +1,4 @@
-import { LayoutDashboard, FolderKanban, Users, CalendarRange, Settings, ChevronDown, LogOut } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Users, CalendarRange, Settings, ChevronDown, LogOut, Gauge } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,6 +26,7 @@ const navItems = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard },
   { title: 'Projects', url: '/projects', icon: FolderKanban },
   { title: 'Resources', url: '/resources', icon: CalendarRange, roles: ['admin', 'manager'] as const },
+  { title: 'Bandwidth', url: '/bandwidth', icon: Gauge, roles: ['admin', 'manager'] as const },
   { title: 'Team', url: '/team', icon: Users, roles: ['admin', 'manager'] as const },
   { title: 'Settings', url: '/settings', icon: Settings, roles: ['admin'] as const },
 ];

@@ -8,6 +8,7 @@ import { Pencil } from 'lucide-react';
 import { updateItem } from '@/lib/store';
 import { SUPPORTED_CURRENCIES, type CurrencyCode } from '@/lib/currency';
 import type { Project, ProjectCategory, ProjectStatus, Priority } from '@/lib/types';
+import { logActivityEvent } from '@/lib/notifications';
 
 const CATEGORIES: ProjectCategory[] = ['Scouting', 'Event', 'Full Report', 'Light Report', 'Other'];
 const STATUSES: ProjectStatus[] = ['Active', 'On Hold', 'Completed'];
@@ -29,7 +30,16 @@ export default function EditProjectDialog({ project, onUpdated }: Props) {
 
   const handleSubmit = async () => {
     if (form.category === 'Other' && !form.categoryOtherSpec?.trim()) return;
+    const statusChanged = form.status !== project.status;
     await updateItem('projects', form);
+    if (statusChanged) {
+      logActivityEvent({
+        userId: 'system',
+        projectId: project.id,
+        type: 'project_status_changed',
+        message: `Project "${project.name}" status changed to ${form.status}`,
+      });
+    }
     setOpen(false);
     onUpdated();
   };

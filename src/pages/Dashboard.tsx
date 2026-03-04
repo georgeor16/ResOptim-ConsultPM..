@@ -1,6 +1,6 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData } from '@/lib/store';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,9 @@ import RevenueForecast from '@/components/dashboard/RevenueForcast';
 import UnifiedGantt from '@/components/dashboard/UnifiedGantt';
 import TeamHeatmap from '@/components/dashboard/TeamHeatmap';
 import CollapsibleSection from '@/components/dashboard/CollapsibleSection';
+import { GanttExportPanel } from '@/components/GanttExportPanel';
+import { ActivityFeed } from '@/components/ActivityFeed';
+import { getRecentActivity } from '@/lib/notifications';
 
 export default function Dashboard() {
   const { isManagerOrAbove, currentUser } = useAuth();
@@ -22,6 +25,8 @@ export default function Dashboard() {
   const [data, setData] = useState<AppData | null>(null);
   const baseCurrency = getBaseCurrency();
   const [rates, setRates] = useState<FxRates>(loadFxRates());
+  const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const ganttChartRef = useRef<HTMLElement | null>(null);
 
   // Refetch when landing on dashboard so Gantt and all widgets stay in sync with changes
   useEffect(() => {
@@ -45,6 +50,8 @@ export default function Dashboard() {
         data.allocations.some(a => a.projectId === p.id && a.userId === currentUser?.id) ||
         data.tasks.some(t => t.projectId === p.id && (t.assigneeIds || []).includes(currentUser?.id || ''))
       );
+
+  const recentActivity = getRecentActivity(7);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -100,8 +107,39 @@ export default function Dashboard() {
 
       {isManagerOrAbove && (
         <>
+          <CollapsibleSection title="Activity Feed">
+            <ActivityFeed events={recentActivity} compact />
+          </CollapsibleSection>
           <CollapsibleSection title="Project Timeline">
-            <UnifiedGantt data={data} />
+            <UnifiedGantt
+              data={data}
+              chartRef={ganttChartRef}
+              onExportClick={() => setExportPanelOpen(true)}
+            />
+            <GanttExportPanel
+              open={exportPanelOpen}
+              onOpenChange={setExportPanelOpen}
+              data={data}
+              exportTitle="All Projects"
+              isCumulative
+              chartRef={ganttChartRef}
+              onExportPdf={(blob, filename) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              onExportPng={(blob, filename) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            />
           </CollapsibleSection>
           <CollapsibleSection title="Team Utilization">
             <TeamHeatmap data={data} />

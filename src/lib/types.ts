@@ -9,6 +9,27 @@ export type ProjectStatus = 'Active' | 'On Hold' | 'Completed';
 export type Priority = 'High' | 'Medium' | 'Low';
 export type TaskStatus = 'To Do' | 'In Progress' | 'Blocked' | 'Done';
 
+export type AllocationContributionMode = 'full' | 'part' | 'custom';
+
+/** Task duration unit for single source of truth; converted to hours internally. */
+export type TaskDurationUnit = 'hours' | 'days' | 'weeks' | 'months' | 'quarters';
+
+/** 0 = Sunday, 1 = Monday, ... 6 = Saturday. Default [1,2,3,4,5] = Mon–Fri. */
+export type WorkingDay = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface CalendarProfile {
+  /** IANA timezone (e.g. "Europe/London"). Used to anchor task dates to local working day. */
+  timezone: string;
+  /** Days of week the member works. Default [1,2,3,4,5]. */
+  workingDays: WorkingDay[];
+  /** Hours per working day. Default 8. */
+  dailyWorkingHours: number;
+  /** Override for weekly hours; otherwise derived as workingDays.length × dailyWorkingHours. */
+  weeklyWorkingHours?: number;
+  /** Non-working dates (YYYY-MM-DD) — holidays/blackout. Excluded from available hour calc. */
+  blackoutDates: string[];
+}
+
 export interface User {
   id: string;
   name: string;
@@ -18,6 +39,8 @@ export interface User {
   billableHourlyRate: number;
   avatarColor: string;
   currency: string; // CurrencyCode
+  /** Optional calendar for timezone, working days, and availability. */
+  calendar?: CalendarProfile;
 }
 
 export interface Project {
@@ -43,6 +66,8 @@ export interface Allocation {
   ftePercent: number; // 0-100
   agreedMonthlyHours: number;
   billableHourlyRate: number;
+  contributionMode?: AllocationContributionMode;
+  roleOnProject?: string; // e.g. "Lead", "Support" — role on this project
 }
 
 export interface Phase {
@@ -62,8 +87,14 @@ export interface Task {
   title: string;
   description: string;
   assigneeIds: string[];
-  status: TaskStatus;
+  /** Optional: duration as value + unit (single source of truth). When set, estimatedHours is derived. */
+  durationValue?: number;
+  durationUnit?: TaskDurationUnit;
+  /** Effort in hours. Derived from durationValue+durationUnit when present; else manual/legacy. */
   estimatedHours: number;
+  /** Optional: % of task effort per assignee (userId -> 0–100). Must sum to 100; default equal split. */
+  assigneeSplit?: Record<string, number>;
+  status: TaskStatus;
   startDate: string;
   dueDate: string;
   order: number;

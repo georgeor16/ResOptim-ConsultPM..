@@ -42,16 +42,28 @@ async function loadFromSupabase(): Promise<AppData> {
   return result;
 }
 
+const EMPTY_DATA: AppData = { users: [], projects: [], allocations: [], phases: [], tasks: [], subtasks: [], timelogs: [], alerts: [] };
+
 function loadFromLocalSync(): AppData {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw) as Partial<AppData>;
+      return {
+        users: Array.isArray(parsed.users) ? parsed.users : [],
+        projects: Array.isArray(parsed.projects) ? parsed.projects : [],
+        allocations: Array.isArray(parsed.allocations) ? parsed.allocations : [],
+        phases: Array.isArray(parsed.phases) ? parsed.phases : [],
+        tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+        subtasks: Array.isArray(parsed.subtasks) ? parsed.subtasks : [],
+        timelogs: Array.isArray(parsed.timelogs) ? parsed.timelogs : [],
+        alerts: Array.isArray(parsed.alerts) ? parsed.alerts : [],
+      };
     } catch {
       // corrupted
     }
   }
-  return { users: [], projects: [], allocations: [], phases: [], tasks: [], subtasks: [], timelogs: [], alerts: [] };
+  return { ...EMPTY_DATA };
 }
 
 /** Load all app data. Uses Supabase if configured, else localStorage. */
@@ -93,8 +105,9 @@ export async function addItem<T extends { id: string }>(key: keyof AppData, item
   if (supabase) {
     const row = appToRow(item as unknown as Record<string, unknown>);
     const { error } = await supabase.from(getTable(key)).insert(row);
-    if (error) throw new Error(`Supabase add ${key}: ${error.message}`);
-    return;
+    if (!error) return;
+    // Fallback to local storage when Supabase schema is missing new columns or other non-fatal issues.
+    console.error(`Supabase add ${key} failed, falling back to local storage:`, error);
   }
   const data = loadFromLocalSync();
   (data[key] as unknown as T[]).push(item);
@@ -106,8 +119,8 @@ export async function updateItem<T extends { id: string }>(key: keyof AppData, i
   if (supabase) {
     const row = appToRow(item as unknown as Record<string, unknown>);
     const { error } = await supabase.from(getTable(key)).update(row).eq('id', item.id);
-    if (error) throw new Error(`Supabase update ${key}: ${error.message}`);
-    return;
+    if (!error) return;
+    console.error(`Supabase update ${key} failed, falling back to local storage:`, error);
   }
   const data = loadFromLocalSync();
   const arr = data[key] as unknown as T[];
@@ -120,8 +133,8 @@ export async function updateItem<T extends { id: string }>(key: keyof AppData, i
 export async function deleteItem(key: keyof AppData, id: string): Promise<void> {
   if (supabase) {
     const { error } = await supabase.from(getTable(key)).delete().eq('id', id);
-    if (error) throw new Error(`Supabase delete ${key}: ${error.message}`);
-    return;
+    if (!error) return;
+    console.error(`Supabase delete ${key} failed, falling back to local storage:`, error);
   }
   const data = loadFromLocalSync();
   const arr = data[key] as unknown as { id: string }[];

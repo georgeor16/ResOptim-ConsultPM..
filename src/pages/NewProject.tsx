@@ -4,8 +4,18 @@ import { useAuth } from '@/contexts/AuthContext';
 import { loadData, saveData, saveDataToSupabase, genId } from '@/lib/store';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import type { AppData } from '@/lib/types';
-import type { ProjectCategory, ProjectStatus, Priority, Allocation, Phase, Project, FeeType } from '@/lib/types';
+import type {
+  ProjectCategory,
+  ProjectStatus,
+  Priority,
+  Allocation,
+  Phase,
+  Project,
+  FeeType,
+  AllocationContributionMode,
+} from '@/lib/types';
 import { SUPPORTED_CURRENCIES } from '@/lib/currency';
+import { computeProjectFteFromPhases, computeUserUtilization, deriveAllocationFteFromMode } from '@/lib/fte';
 import { getTemplateForCategory } from '@/lib/templates';
 import TemplatePreview from '@/components/TemplatePreview';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,38 +28,33 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { CalendarIcon, ArrowLeft, Plus, X } from 'lucide-react';
 import { format, addWeeks } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { Switch } from '@/components/ui/switch';
+import { logActivityEvent } from '@/lib/notifications';
 
 const categories: ProjectCategory[] = ['Scouting', 'Event', 'Full Report', 'Light Report', 'Other'];
 const priorities: Priority[] = ['High', 'Medium', 'Low'];
 const statuses: ProjectStatus[] = ['Active', 'On Hold', 'Completed'];
 
 const HOURS_PER_WEEK = 40;
-const HOURS_PER_MONTH = 160; // 4 weeks
+const DAYS_PER_MONTH = 30.44;
+const WEEKS_PER_MONTH = 4.345;
+const HOURS_PER_MONTH = 730; // approx. working hours per month
 
-const effortUnitToHours: Record<string, number> = {
-  hours: 1,
-  days: 8,
-  weeks: HOURS_PER_WEEK,
-  month: HOURS_PER_MONTH,
-};
-const EFFORT_UNITS = ['hours', 'days', 'weeks', 'month'] as const;
-type EffortUnit = (typeof EFFORT_UNITS)[number];
+type DurationUnit = 'hours' | 'days' | 'weeks' | 'months' | 'quarters' | 'years';
+type FteViewBasis = 'week' | 'month' | 'quarter' | 'halfyear' | 'year';
 
 interface TeamAllocation {
   userId: string;
   ftePercent: number;
+  contributionMode: AllocationContributionMode;
   agreedMonthlyHours: number;
   billableHourlyRate: number;
 }
 
 interface PhaseEntry {
   name: string;
-  durationWeeks: number;
+  durationValue: number;
+  durationUnit: DurationUnit;
   ftePercent: number;
-  effortValue: number;
-  effortUnit: EffortUnit;
-  autoFte: boolean;
 }
 
 export default function NewProject() {
@@ -74,32 +79,53 @@ export default function NewProject() {
   const [projectCurrency, setProjectCurrency] = useState<string>('USD');
   const [allocations, setAllocations] = useState<TeamAllocation[]>([]);
   const [phaseEntries, setPhaseEntries] = useState<PhaseEntry[]>([]);
+  const [fteViewBasis, setFteViewBasis] = useState<FteViewBasis>('month');
 
   const template = getTemplateForCategory(category);
 
-  const computePlannedFtePercent = (effortHours: number, durationWeeks: number) => {
-    const denom = Math.max(0.01, durationWeeks * HOURS_PER_WEEK);
-    return Math.round((effortHours / denom) * 100);
+  const durationToMonths = (value: number, unit: DurationUnit): number => {
+    const v = Number(value) || 0;
+    switch (unit) {
+      case 'hours':
+        return v / HOURS_PER_MONTH;
+      case 'days':
+        return v / DAYS_PER_MONTH;
+      case 'weeks':
+        return v / WEEKS_PER_MONTH;
+      case 'months':
+        return v;
+      case 'quarters':
+        return v * 3;
+      case 'years':
+        return v * 12;
+      default:
+        return v;
+    }
   };
 
-  const normalizePhaseEntry = (p: PhaseEntry): PhaseEntry => {
-    if (!p.autoFte) return p;
-    const hoursPerUnit = effortUnitToHours[p.effortUnit] ?? 1;
-    const effortHours = (Number(p.effortValue) || 0) * hoursPerUnit;
-    return { ...p, ftePercent: computePlannedFtePercent(effortHours, Number(p.durationWeeks) || 0) };
+  const recomputePhaseFte = (entries: PhaseEntry[]): PhaseEntry[] => {
+    return entries.map(p => {
+      const months = durationToMonths(p.durationValue, p.durationUnit);
+      let pct = Math.round(months * 100);
+      if (pct < 0) pct = 0;
+      if (pct > 100) pct = 100;
+      return { ...p, ftePercent: pct };
+    });
   };
 
   // Auto-fill when category changes to a templated one
   useEffect(() => {
     if (template) {
-      setPhaseEntries(template.phases.map(p => normalizePhaseEntry({
-        name: p.name,
-        durationWeeks: p.durationWeeks,
-        ftePercent: p.ftePercent,
-        effortValue: Math.round((p.durationWeeks * HOURS_PER_WEEK * (p.ftePercent / 100)) * 10) / 10,
-        effortUnit: 'hours' as EffortUnit,
-        autoFte: true,
-      })));
+      setPhaseEntries(prev =>
+        recomputePhaseFte(
+          template.phases.map(p => ({
+            name: p.name,
+            durationValue: p.durationWeeks,
+            durationUnit: 'weeks',
+            ftePercent: p.ftePercent,
+          })),
+        ),
+      );
       if (startDate) {
         setEndDate(addWeeks(startDate, template.timelineWeeks));
       } else {
@@ -119,6 +145,17 @@ export default function NewProject() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate]);
 
+  // When phases change, keep allocations in sync for non-custom modes
+  useEffect(() => {
+    setAllocations(prev =>
+      prev.map((alloc, idx, arr) => {
+        if (!alloc.userId || alloc.contributionMode === 'custom') return alloc;
+        const updatedList = recomputeAllocationAtIndex(arr as TeamAllocation[], idx);
+        return updatedList[idx];
+      }),
+    );
+  }, [phaseEntries]);
+
   if (!isManagerOrAbove) {
     navigate('/');
     return null;
@@ -129,26 +166,101 @@ export default function NewProject() {
     );
   }
 
+  const userUtilization = computeUserUtilization(data, 'month');
+
+  const computeProjectFte = (): number => {
+    if (phaseEntries.length === 0) return 0;
+    const phasesForProject = phaseEntries.map(p => ({
+      durationMonths: durationToMonths(p.durationValue, p.durationUnit),
+      ftePercent: p.ftePercent,
+    }));
+    return computeProjectFteFromPhases(phasesForProject);
+  };
+
+  const recomputeAllocationAtIndex = (list: TeamAllocation[], idx: number): TeamAllocation[] => {
+    const next = [...list];
+    const alloc = next[idx];
+    if (!alloc || !alloc.userId) return next;
+
+    const util = userUtilization[alloc.userId] ?? 0;
+    const projectFte = computeProjectFte();
+
+    const fte = deriveAllocationFteFromMode({
+      projectFteDemand: projectFte,
+      userUtilizationPercent: util,
+      mode: alloc.contributionMode || 'full',
+      currentFtePercent: alloc.ftePercent,
+    });
+
+    const agreedMonthlyHours = Math.round((160 * fte) / 100); // 160h ≈ full month
+
+    next[idx] = {
+      ...alloc,
+      ftePercent: fte,
+      agreedMonthlyHours,
+    };
+    return next;
+  };
+
   const addAllocation = () => {
     const unassigned = data.users.filter(u => !allocations.some(a => a.userId === u.id));
     if (unassigned.length === 0) return;
-    const user = unassigned[0];
-    setAllocations([...allocations, {
-      userId: user.id,
-      ftePercent: 20,
-      agreedMonthlyHours: 32,
-      billableHourlyRate: user.billableHourlyRate,
-    }]);
+    // Pick the user with the most free bandwidth among unassigned
+    const ranked = [...unassigned].sort((a, b) => {
+      const utilA = userUtilization[a.id] ?? 0;
+      const utilB = userUtilization[b.id] ?? 0;
+      const freeA = 100 - utilA;
+      const freeB = 100 - utilB;
+      return freeB - freeA; // highest free first
+    });
+    const user = ranked[0];
+
+    const base: TeamAllocation[] = [
+      ...allocations,
+      {
+        userId: user.id,
+        ftePercent: 0,
+        contributionMode: 'full',
+        agreedMonthlyHours: 0,
+        billableHourlyRate: user.billableHourlyRate,
+      },
+    ];
+
+    const updated = recomputeAllocationAtIndex(base, base.length - 1);
+    setAllocations(updated);
   };
 
   const updateAllocation = (idx: number, field: keyof TeamAllocation, value: string | number) => {
-    const updated = [...allocations];
+    let updated: TeamAllocation[] = [...allocations];
+
     if (field === 'userId') {
       const user = data.users.find(u => u.id === value);
-      updated[idx] = { ...updated[idx], userId: value as string, billableHourlyRate: user?.billableHourlyRate || 0 };
+      updated[idx] = {
+        ...updated[idx],
+        userId: value as string,
+        billableHourlyRate: user?.billableHourlyRate || 0,
+      };
+      updated = recomputeAllocationAtIndex(updated, idx);
+    } else if (field === 'contributionMode') {
+      updated[idx] = {
+        ...updated[idx],
+        contributionMode: value as AllocationContributionMode,
+      };
+      updated = recomputeAllocationAtIndex(updated, idx);
+    } else if (field === 'ftePercent') {
+      // Manual FTE edit implies custom mode
+      const val = Number(value) || 0;
+      const clamped = Math.max(0, Math.min(100, val));
+      updated[idx] = {
+        ...updated[idx],
+        contributionMode: 'custom',
+        ftePercent: clamped,
+        agreedMonthlyHours: Math.round((160 * clamped) / 100),
+      };
     } else {
       updated[idx] = { ...updated[idx], [field]: Number(value) };
     }
+
     setAllocations(updated);
   };
 
@@ -157,21 +269,31 @@ export default function NewProject() {
   };
 
   const updatePhaseEntry = (idx: number, field: keyof PhaseEntry, value: string | number) => {
-    const updated = [...phaseEntries];
-    if (field === 'name') {
-      updated[idx] = { ...updated[idx], name: value as string };
-    } else if (field === 'effortUnit') {
-      updated[idx] = normalizePhaseEntry({ ...updated[idx], effortUnit: value as EffortUnit });
-    } else if (field === 'autoFte') {
-      updated[idx] = normalizePhaseEntry({ ...updated[idx], autoFte: Boolean(value) });
-    } else {
-      updated[idx] = normalizePhaseEntry({ ...updated[idx], [field]: Number(value) });
-    }
-    setPhaseEntries(updated);
+    setPhaseEntries(prev => {
+      const updated = [...prev];
+      if (field === 'name') {
+        updated[idx] = { ...updated[idx], name: value as string };
+      } else if (field === 'durationUnit') {
+        updated[idx] = { ...updated[idx], durationUnit: value as DurationUnit };
+      } else {
+        updated[idx] = { ...updated[idx], [field]: Number(value) };
+      }
+      return recomputePhaseFte(updated);
+    });
   };
 
   const addPhaseEntry = () => {
-    setPhaseEntries([...phaseEntries, normalizePhaseEntry({ name: '', durationWeeks: 1, ftePercent: 50, effortValue: 20, effortUnit: 'hours', autoFte: true })]);
+    setPhaseEntries(prev =>
+      recomputePhaseFte([
+        ...prev,
+        {
+          name: '',
+          durationValue: 1,
+          durationUnit: 'months',
+          ftePercent: 0,
+        },
+      ]),
+    );
   };
 
   const removePhaseEntry = (idx: number) => {
@@ -209,15 +331,16 @@ export default function NewProject() {
     }));
 
     const newPhases: Phase[] = phaseEntries.map((p, i) => {
-      const hoursPerUnit = effortUnitToHours[p.effortUnit] ?? 1;
-      const effortHours = (Number(p.effortValue) || 0) * hoursPerUnit;
+      const months = durationToMonths(p.durationValue, p.durationUnit);
+      const weeks = months * WEEKS_PER_MONTH;
+      const plannedEffortHours = weeks * HOURS_PER_WEEK * (Number(p.ftePercent) || 0) / 100;
       return {
         id: genId(),
         projectId,
         name: p.name,
         order: i,
-        plannedDurationWeeks: p.durationWeeks,
-        plannedEffortHours: effortHours,
+        plannedDurationWeeks: weeks,
+        plannedEffortHours,
         plannedFtePercent: p.ftePercent,
       };
     });
@@ -231,6 +354,13 @@ export default function NewProject() {
     } else {
       saveData(current);
     }
+
+    logActivityEvent({
+      userId: 'system',
+      projectId,
+      type: 'project_created',
+      message: `Project "${newProject.name}" was created`,
+    });
 
     navigate(`/projects/${projectId}`);
   };
@@ -362,7 +492,15 @@ export default function NewProject() {
       {template && <TemplatePreview template={template} />}
 
       {/* Phases */}
-      <Card>
+      <Card
+        style={{
+          backdropFilter: 'blur(20px)',
+          background: 'rgba(255,255,255,0.08)',
+          border: '1px solid rgba(255,255,255,0.15)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+          borderRadius: 16,
+        }}
+      >
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg">Phases</CardTitle>
           <Button variant="outline" size="sm" onClick={addPhaseEntry}>
@@ -374,45 +512,112 @@ export default function NewProject() {
             <p className="text-sm text-muted-foreground text-center py-6">No phases defined. Select a templated category or add manually.</p>
           ) : (
             <div className="space-y-3">
-              <div className="grid grid-cols-[1fr_100px_1fr_130px_40px] gap-3 text-xs font-medium text-muted-foreground px-1">
+              <div className="grid grid-cols-[1fr_220px_1fr_40px] gap-3 text-xs font-medium text-muted-foreground px-1">
                 <span>Phase Name</span>
                 <span>Duration</span>
-                <span>Effort</span>
-                <span>FTE % · Auto</span>
+                <span>FTE % view</span>
                 <span />
               </div>
-              {phaseEntries.map((phase, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_100px_1fr_130px_40px] gap-3 items-center">
-                  <Input value={phase.name} onChange={e => updatePhaseEntry(idx, 'name', e.target.value)} placeholder="Phase name" />
-                  <Input type="number" min={0.5} step={0.5} value={phase.durationWeeks} onChange={e => updatePhaseEntry(idx, 'durationWeeks', e.target.value)} />
-                  <div className="flex gap-2 min-w-0">
-                    <Input type="number" min={0} step={0.5} value={phase.effortValue} onChange={e => updatePhaseEntry(idx, 'effortValue', e.target.value)} className="min-w-0" />
-                    <Select value={phase.effortUnit} onValueChange={v => updatePhaseEntry(idx, 'effortUnit', v)}>
-                      <SelectTrigger className="w-[88px] shrink-0"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {EFFORT_UNITS.map(u => (
-                          <SelectItem key={u} value={u}>{u === 'month' ? 'month' : u}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+              {phaseEntries.map((phase, idx) => {
+                const months = durationToMonths(phase.durationValue, phase.durationUnit);
+                const basePctRaw = months * 100; // per-month %
+
+                let viewRaw: number;
+                switch (fteViewBasis) {
+                  case 'week':
+                    viewRaw = basePctRaw / WEEKS_PER_MONTH;
+                    break;
+                  case 'quarter':
+                    viewRaw = basePctRaw * 3;
+                    break;
+                  case 'halfyear':
+                    viewRaw = basePctRaw * 6;
+                    break;
+                  case 'year':
+                    viewRaw = basePctRaw * 12;
+                    break;
+                  case 'month':
+                  default:
+                    viewRaw = basePctRaw;
+                }
+
+                let displayPct: string;
+                if (viewRaw > 0 && viewRaw < 1) {
+                  displayPct = viewRaw.toFixed(2);
+                } else {
+                  displayPct = Math.round(viewRaw).toString();
+                }
+
+                const viewLabel =
+                  fteViewBasis === 'week'
+                    ? 'week'
+                    : fteViewBasis === 'month'
+                      ? 'month'
+                      : fteViewBasis === 'quarter'
+                        ? 'quarter'
+                        : fteViewBasis === 'halfyear'
+                          ? 'half-year'
+                          : 'year';
+
+                return (
+                  <div key={idx} className="grid grid-cols-[1fr_220px_1fr_40px] gap-3 items-center">
+                  <Input
+                    value={phase.name}
+                    onChange={e => updatePhaseEntry(idx, 'name', e.target.value)}
+                    placeholder="Phase name"
+                  />
                   <div className="flex items-center gap-2">
                     <Input
                       type="number"
                       min={0}
-                      max={100}
-                      value={phase.ftePercent}
-                      disabled={phase.autoFte}
-                      onChange={e => updatePhaseEntry(idx, 'ftePercent', e.target.value)}
+                      step={0.5}
+                      value={phase.durationValue}
+                      onChange={e => updatePhaseEntry(idx, 'durationValue', e.target.value)}
                       className="w-16"
                     />
-                    <Switch checked={phase.autoFte} onCheckedChange={checked => updatePhaseEntry(idx, 'autoFte', checked)} title={phase.autoFte ? 'Auto FTE on' : 'Auto FTE off'} />
+                    <Select
+                      value={phase.durationUnit}
+                      onValueChange={v => updatePhaseEntry(idx, 'durationUnit', v)}
+                    >
+                      <SelectTrigger className="w-[120px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="hours">Hours</SelectItem>
+                        <SelectItem value="days">Days</SelectItem>
+                        <SelectItem value="weeks">Weeks</SelectItem>
+                        <SelectItem value="months">Months</SelectItem>
+                        <SelectItem value="quarters">Quarters</SelectItem>
+                        <SelectItem value="years">Years</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground opacity-70">
+                      {displayPct}% / {viewLabel}
+                    </span>
+                    <Select
+                      value={fteViewBasis}
+                      onValueChange={v => setFteViewBasis(v as FteViewBasis)}
+                    >
+                      <SelectTrigger className="h-7 px-2 rounded-full bg-background/40 border border-white/10 text-[11px] text-muted-foreground backdrop-blur-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="week">Week</SelectItem>
+                        <SelectItem value="month">Month</SelectItem>
+                        <SelectItem value="quarter">Quarter</SelectItem>
+                        <SelectItem value="halfyear">Half Year</SelectItem>
+                        <SelectItem value="year">Year</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <Button variant="ghost" size="icon" onClick={() => removePhaseEntry(idx)}>
                     <X className="h-4 w-4 text-muted-foreground" />
                   </Button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -428,30 +633,87 @@ export default function NewProject() {
         </CardHeader>
         <CardContent>
           {allocations.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No team members allocated yet. Click "Add Member" to assign people.</p>
+            <p className="text-sm text-muted-foreground text-center py-6">
+              No team members allocated yet. Click &quot;Add Member&quot; to assign people.
+            </p>
           ) : (
             <div className="space-y-3">
-              <div className="grid grid-cols-[1fr_100px_120px_120px_40px] gap-3 text-xs font-medium text-muted-foreground px-1">
+              <div className="grid grid-cols-[1fr_150px_120px_40px] gap-3 text-xs font-medium text-muted-foreground px-1">
                 <span>Member</span>
+                <span>Contribution</span>
                 <span>FTE %</span>
-                <span>Monthly Hours</span>
-                <span>Hourly Rate (€)</span>
                 <span />
               </div>
               {allocations.map((alloc, idx) => {
                 const assignedIds = allocations.map(a => a.userId);
-                const availableUsers = data.users.filter(u => u.id === alloc.userId || !assignedIds.includes(u.id));
+                const availableUsers = data.users
+                  .filter(u => u.id === alloc.userId || !assignedIds.includes(u.id))
+                  .map(u => {
+                    const util = userUtilization[u.id] ?? 0;
+                    const free = Math.max(0, 100 - util);
+                    return { ...u, _free: free };
+                  })
+                  .sort((a, b) => b._free - a._free);
+
+                const currentMode: AllocationContributionMode = alloc.contributionMode || 'full';
+
                 return (
-                  <div key={idx} className="grid grid-cols-[1fr_100px_120px_120px_40px] gap-3 items-center">
+                  <div key={idx} className="grid grid-cols-[1fr_150px_120px_40px] gap-3 items-center">
                     <Select value={alloc.userId} onValueChange={v => updateAllocation(idx, 'userId', v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select member" />
+                      </SelectTrigger>
                       <SelectContent>
-                        {availableUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                        {availableUsers.map(u => {
+                          const initials = u.name
+                            .split(' ')
+                            .filter(Boolean)
+                            .map(n => n[0])
+                            .join('')
+                            .toUpperCase();
+                          return (
+                            <SelectItem key={u.id} value={u.id}>
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold"
+                                  style={{ backgroundColor: u.avatarColor, color: 'white' }}
+                                >
+                                  {initials}
+                                </div>
+                                <span>{u.name}</span>
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
-                    <Input type="number" min={0} max={100} value={alloc.ftePercent} onChange={e => updateAllocation(idx, 'ftePercent', e.target.value)} />
-                    <Input type="number" min={0} value={alloc.agreedMonthlyHours} onChange={e => updateAllocation(idx, 'agreedMonthlyHours', e.target.value)} />
-                    <Input type="number" min={0} value={alloc.billableHourlyRate} onChange={e => updateAllocation(idx, 'billableHourlyRate', e.target.value)} />
+
+                    <Select
+                      value={currentMode}
+                      onValueChange={v => updateAllocation(idx, 'contributionMode', v)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full">Full-time</SelectItem>
+                        <SelectItem value="part">Part-time</SelectItem>
+                        <SelectItem value="custom">Custom</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {currentMode === 'custom' ? (
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={alloc.ftePercent}
+                        onChange={e => updateAllocation(idx, 'ftePercent', e.target.value)}
+                      />
+                    ) : (
+                      <div className="text-sm text-muted-foreground">{alloc.ftePercent}%</div>
+                    )}
+
                     <Button variant="ghost" size="icon" onClick={() => removeAllocation(idx)}>
                       <X className="h-4 w-4 text-muted-foreground" />
                     </Button>

@@ -6,7 +6,8 @@ import type { AppData } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus, Search, ArrowUpDown, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
+import { Plus, Search, ArrowUpDown, ArrowUp, ArrowDown, Trash2, UserCog } from 'lucide-react';
+import ProjectTeamEditor from '@/components/ProjectTeamEditor';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -58,6 +59,7 @@ export default function Projects() {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [editTeamProjectId, setEditTeamProjectId] = useState<string | null>(null);
 
   const toggleSort = (key: string) => {
     if (sortKey === key) {
@@ -193,13 +195,13 @@ export default function Projects() {
                   <span className="flex items-center">Category<SortIcon column="category" /></span>
                 </TableHead>
                 <TableHead>Team</TableHead>
+                {isManagerOrAbove && <TableHead className="w-[100px]">Actions</TableHead>}
                 <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('progress')}>
                   <span className="flex items-center">Progress<SortIcon column="progress" /></span>
                 </TableHead>
                 <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort('timeline')}>
                   <span className="flex items-center justify-end">Timeline<SortIcon column="timeline" /></span>
                 </TableHead>
-                {isManagerOrAbove && <TableHead className="w-[60px] text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -242,6 +244,29 @@ export default function Projects() {
                         )}
                       </div>
                     </TableCell>
+                    {isManagerOrAbove && (
+                      <TableCell onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                            title="Edit team"
+                            onClick={() => setEditTeamProjectId(project.id)}
+                          >
+                            <UserCog className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            onClick={() => setProjectToDelete(project)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
                     <TableCell>
                       <div className="flex items-center gap-2 min-w-[120px]">
                         <Progress value={progress} className="h-1.5 flex-1" />
@@ -253,18 +278,6 @@ export default function Projects() {
                       {' – '}
                       {new Date(project.endDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
                     </TableCell>
-                    {isManagerOrAbove && (
-                      <TableCell className="text-right" onClick={e => e.stopPropagation()}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                          onClick={() => setProjectToDelete(project)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    )}
                   </TableRow>
                 );
               })}
@@ -279,6 +292,16 @@ export default function Projects() {
           </Table>
         </CardContent>
       </Card>
+
+      {editTeamProjectId && (
+        <ProjectTeamEditor
+          projectId={editTeamProjectId}
+          open={!!editTeamProjectId}
+          onOpenChange={open => !open && setEditTeamProjectId(null)}
+          onUpdated={() => setRefreshKey(k => k + 1)}
+          initialData={data}
+        />
+      )}
 
       <AlertDialog open={!!projectToDelete} onOpenChange={open => !open && setProjectToDelete(null)}>
         <AlertDialogContent>

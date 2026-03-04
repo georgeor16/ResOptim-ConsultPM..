@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData, updateItem, addItem, deleteItem, deleteProject, genId } from '@/lib/store';
-import type { AppData, Task, TaskStatus } from '@/lib/types';
+import type { AppData, Task, TaskStatus, TaskDurationUnit } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Plus, Clock, Users, DollarSign, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Clock, Users, DollarSign, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Pencil, Trash2, UserCog, FileDown, Check, Square } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,8 +26,28 @@ import {
 import AddMemberDialog from '@/components/AddMemberDialog';
 import MultiSelectAssignee from '@/components/MultiSelectAssignee';
 import EditProjectDialog from '@/components/EditProjectDialog';
+import ProjectTeamEditor from '@/components/ProjectTeamEditor';
+import { BandwidthWarning } from '@/components/BandwidthWarning';
+import { LoadPill } from '@/components/LoadPill';
+import { AssigneeSplitControl } from '@/components/AssigneeSplitControl';
 import { getBaseCurrency, convertCurrency, formatMoney, formatMoneyWithCode, refreshFxRates, loadFxRates, type CurrencyCode, type FxRates } from '@/lib/currency';
+import { durationToHours, getTaskDurationHours } from '@/lib/duration';
+import {
+  getMemberProjectFtePercent,
+  getMemberTotalPeakFte,
+  getDefaultPeriodBounds,
+  getConcurrencyWarnings,
+  type ViewPeriod as BandwidthViewPeriod,
+} from '@/lib/bandwidth';
+import { getBandwidthStatus } from '@/lib/fte';
+import { getMemberCalendar, getAvailableHoursForMember } from '@/lib/calendar';
 import { computeTaskFtePercent, computePhaseFtePercent } from '@/lib/fte';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Checkbox } from '@/components/ui/checkbox';
+import { GanttExportPanel } from '@/components/GanttExportPanel';
+import { ActivityFeed } from '@/components/ActivityFeed';
+import { getActivityForProject, logActivityEvent } from '@/lib/notifications';
+import { cn } from '@/lib/utils';
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -39,7 +59,23 @@ export default function ProjectDetail() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', description: '', phaseId: '', assigneeIds: [] as string[], estimatedHours: 0, startDate: '', dueDate: '' });
+  const [teamEditorOpen, setTeamEditorOpen] = useState(false);
+  const [viewPeriod, setViewPeriod] = useState<BandwidthViewPeriod>('month');
+  const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [showCompletedTasks, setShowCompletedTasks] = useState(true);
+  const [inlineDeleteTaskId, setInlineDeleteTaskId] = useState<string | null>(null);
+  const ganttChartRef = useRef<HTMLElement | null>(null);
+  const [newTask, setNewTask] = useState({
+    title: '',
+    description: '',
+    phaseId: '',
+    assigneeIds: [] as string[],
+    durationValue: 8,
+    durationUnit: 'hours' as TaskDurationUnit,
+    estimatedHours: 8,
+    startDate: '',
+    dueDate: '',
+  });
   const baseCurrency = getBaseCurrency();
   const [rates, setRates] = useState<FxRates>(loadFxRates());
 
@@ -70,11 +106,21 @@ export default function ProjectDetail() {
   }
 
   const allocations = data.allocations.filter(a => a.projectId === project.id);
-  const phases = data.phases.filter(p => p.projectId === project.id).sort((a, b) => a.order - b.order);
   const tasks = data.tasks.filter(t => t.projectId === project.id);
+  const phases = data.phases.filter(p => p.projectId === project.id).sort((a, b) => a.order - b.order);
   const timelogs = data.timelogs.filter(t => t.projectId === project.id);
+  const periodBounds = getDefaultPeriodBounds(viewPeriod);
+  const projectMemberIds = Array.from(
+    new Set([
+      ...allocations.map(a => a.userId),
+      ...tasks.flatMap(t => t.assigneeIds ?? []),
+    ])
+  );
+  const projectMembers = data.users.filter(u => projectMemberIds.includes(u.id));
   const conv = (amount: number, from: string) =>
     convertCurrency(amount, from as CurrencyCode, baseCurrency, rates);
+
+  const projectActivity = getActivityForProject(project.id);
 
   // Financials (converted to base currency)
   const projectRevenue = conv(project.monthlyFee, project.currency || 'USD');
@@ -106,48 +152,126 @@ export default function ProjectDetail() {
   };
 
   const handleStatusChange = async (task: Task, status: TaskStatus) => {
+    const wasDone = task.status === 'Done';
     await updateItem('tasks', { ...task, status });
+    if (!wasDone && status === 'Done') {
+      logActivityEvent({
+        userId: currentUser?.id || 'system',
+        projectId: project.id,
+        taskId: task.id,
+        type: 'task_completed',
+        message: `Task "${task.title}" was marked complete`,
+      });
+    }
+    setRefreshKey(k => k + 1);
+  };
+
+  const handleCompletionToggle = async (task: Task) => {
+    const nextStatus: TaskStatus = task.status === 'Done' ? 'To Do' : 'Done';
+    await updateItem('tasks', { ...task, status: nextStatus });
     setRefreshKey(k => k + 1);
   };
 
   const handleCreateTask = async () => {
-    if (!newTask.title || !newTask.phaseId) return;
-    const phaseTasks = tasks.filter(t => t.phaseId === newTask.phaseId);
+    if (!newTask.title) return;
+
+    // Ensure we have a phase to attach the task to
+    let targetPhaseId = newTask.phaseId;
+    if (!targetPhaseId) {
+      if (phases.length === 0) {
+        const newPhaseId = genId();
+        await addItem('phases', {
+          id: newPhaseId,
+          projectId: project.id,
+          name: 'General',
+          order: 0,
+        });
+        targetPhaseId = newPhaseId;
+      } else {
+        targetPhaseId = phases[0].id;
+      }
+    }
+
+    const phaseTasks = tasks.filter(t => t.phaseId === targetPhaseId);
+    const estimatedHours = newTask.durationValue != null && newTask.durationUnit
+      ? durationToHours(newTask.durationValue, newTask.durationUnit)
+      : newTask.estimatedHours;
+    const idNew = genId();
     await addItem('tasks', {
-      id: genId(),
+      id: idNew,
       projectId: project.id,
-      phaseId: newTask.phaseId,
+      phaseId: targetPhaseId,
       title: newTask.title,
       description: newTask.description,
       assigneeIds: newTask.assigneeIds,
       status: 'To Do' as TaskStatus,
-      estimatedHours: newTask.estimatedHours,
-      startDate: newTask.startDate,
-      dueDate: newTask.dueDate,
+      durationValue: newTask.durationValue,
+      durationUnit: newTask.durationUnit,
+      estimatedHours,
+      startDate: newTask.startDate || project.startDate,
+      dueDate: newTask.dueDate || project.endDate,
       order: phaseTasks.length,
     });
-    setNewTask({ title: '', description: '', phaseId: '', assigneeIds: [], estimatedHours: 0, startDate: '', dueDate: '' });
+    logActivityEvent({
+      userId: currentUser?.id || 'system',
+      projectId: project.id,
+      type: 'task_created',
+      message: `Task "${newTask.title}" created in project ${project.name}`,
+    });
+
+    setNewTask({
+      title: '',
+      description: '',
+      phaseId: '',
+      assigneeIds: [],
+      durationValue: 8,
+      durationUnit: 'hours',
+      estimatedHours: 8,
+      startDate: '',
+      dueDate: '',
+    });
     setTaskDialogOpen(false);
     setRefreshKey(k => k + 1);
   };
 
   const handleDeleteTask = async (taskId: string) => {
+    const task = data.tasks.find(t => t.id === taskId);
     const timelogsToDelete = data.timelogs.filter(t => t.taskId === taskId);
     const subtasksToDelete = data.subtasks.filter(s => s.taskId === taskId);
     for (const t of timelogsToDelete) await deleteItem('timelogs', t.id);
     for (const s of subtasksToDelete) await deleteItem('subtasks', s.id);
     await deleteItem('tasks', taskId);
+    if (task) {
+      logActivityEvent({
+        userId: currentUser?.id || 'system',
+        projectId: project.id,
+        taskId,
+        type: 'task_deleted',
+        message: `Task "${task.title}" was deleted`,
+      });
+    }
     setRefreshKey(k => k + 1);
   };
 
   const handleEditTask = (task: Task) => {
-    setEditingTask({ ...task });
+    setEditingTask({
+      ...task,
+      durationValue: task.durationValue ?? task.estimatedHours,
+      durationUnit: task.durationUnit ?? 'hours',
+    });
     setEditDialogOpen(true);
   };
 
   const handleSaveEdit = async () => {
     if (!editingTask) return;
     await updateItem('tasks', editingTask);
+    logActivityEvent({
+      userId: currentUser?.id || 'system',
+      projectId: project.id,
+      taskId: editingTask.id,
+      type: 'task_updated',
+      message: `Task "${editingTask.title}" was updated`,
+    });
     setEditDialogOpen(false);
     setEditingTask(null);
     setRefreshKey(k => k + 1);
@@ -187,6 +311,15 @@ export default function ProjectDetail() {
         </div>
         {isManagerOrAbove && (
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTeamEditorOpen(true)}
+              className="gap-1.5"
+            >
+              <UserCog className="h-4 w-4" />
+              Edit Team
+            </Button>
             <AddMemberDialog
               projectId={project.id}
               projectCurrency={(project.currency || 'USD') as CurrencyCode}
@@ -231,6 +364,7 @@ export default function ProjectDetail() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
           <TabsTrigger value="gantt">Gantt</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-4">
@@ -255,8 +389,14 @@ export default function ProjectDetail() {
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium mb-1"><CheckCircle2 className="h-3.5 w-3.5" />Progress</div>
-                <p className="text-xl font-bold">{progress.toFixed(0)}%</p>
-                <p className="text-xs text-muted-foreground">{doneTasks}/{tasks.length} tasks</p>
+                <div className="h-1.5 w-full rounded-full bg-muted/60 overflow-hidden mb-1.5">
+                  <div
+                    className="h-full rounded-full bg-muted-foreground/40 transition-all duration-300"
+                    style={{ width: `${Math.min(100, progress)}%` }}
+                  />
+                </div>
+                <p className="text-sm font-medium text-muted-foreground/90">{progress.toFixed(0)}%</p>
+                <p className="text-xs text-muted-foreground/70">{doneTasks}/{tasks.length} tasks</p>
               </CardContent>
             </Card>
             <Card>
@@ -268,58 +408,114 @@ export default function ProjectDetail() {
             </Card>
           </div>
 
-          {/* Assigned team */}
-          <Card>
-            <CardHeader className="pb-3">
+          {/* Assigned team — task-derived commitment, view period, load pill */}
+          <Card className="bg-card/80 backdrop-blur-sm border-white/10">
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-medium">Assigned Team</CardTitle>
+              <Select value={viewPeriod} onValueChange={v => setViewPeriod(v as BandwidthViewPeriod)}>
+                <SelectTrigger className="w-[120px] h-8 text-xs bg-background/50 border-white/10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="week">Week</SelectItem>
+                  <SelectItem value="month">Month</SelectItem>
+                  <SelectItem value="quarter">Quarter</SelectItem>
+                  <SelectItem value="halfyear">Half year</SelectItem>
+                  <SelectItem value="year">Year</SelectItem>
+                </SelectContent>
+              </Select>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="divide-y">
-                {allocations.map(alloc => {
-                  const user = data.users.find(u => u.id === alloc.userId);
-                  const logged = timelogs.filter(t => t.userId === alloc.userId).reduce((s, t) => s + t.hours, 0);
-                  if (!user) return null;
-                  return (
-                    <div key={alloc.id} className="flex items-center justify-between px-5 py-3">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold"
-                          style={{ backgroundColor: user.avatarColor, color: 'white' }}
-                        >
-                          {user.name.split(' ').map(n => n[0]).join('')}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">{user.name}</p>
-                          <p className="text-xs text-muted-foreground">{alloc.ftePercent}% FTE</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm">
-                        <div className="text-right">
-                          <p className="text-xs text-muted-foreground">Hours</p>
-                          <p className={logged > alloc.agreedMonthlyHours ? 'financial-negative font-medium' : ''}>
-                            {logged}/{alloc.agreedMonthlyHours}h
-                          </p>
-                        </div>
-                        {isManagerOrAbove && (
-                          <div className="text-right">
-                            <p className="text-xs text-muted-foreground">Rate</p>
-                            <p>{formatMoney(alloc.billableHourlyRate, (project.currency || 'USD') as CurrencyCode)}/h</p>
+              <div className="divide-y divide-border/50">
+                {projectMembers.length === 0 ? (
+                  <div className="px-5 py-6 text-center text-sm text-muted-foreground">No team members on this project</div>
+                ) : (
+                  projectMembers.map(user => {
+                    const alloc = allocations.find(a => a.userId === user.id);
+                    const projectFte = getMemberProjectFtePercent(data, user, project.id, viewPeriod, periodBounds.start, periodBounds.end);
+                    const totalPeakFte = getMemberTotalPeakFte(data, user, viewPeriod, periodBounds.start, periodBounds.end);
+                    const logged = timelogs.filter(t => t.userId === user.id).reduce((s, t) => s + t.hours, 0);
+                    const totalFteStatus = getBandwidthStatus(totalPeakFte);
+                    const ofTotalFteClass =
+                      totalFteStatus === 'overallocated'
+                        ? 'text-destructive'
+                        : totalFteStatus === 'full'
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : totalFteStatus === 'approaching'
+                            ? 'text-amber-600/80 dark:text-amber-400/80'
+                            : '';
+                    return (
+                      <div key={user.id} className="flex items-center justify-between px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <BandwidthWarning totalFtePercent={totalPeakFte}>
+                            <div
+                              className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold"
+                              style={{ backgroundColor: user.avatarColor, color: 'white' }}
+                            >
+                              {user.name.split(' ').map(n => n[0]).join('')}
+                            </div>
+                          </BandwidthWarning>
+                          <div>
+                            <p className="text-sm font-medium text-foreground/95">{user.name}</p>
+                            {alloc?.roleOnProject && <p className="text-xs text-muted-foreground">{alloc.roleOnProject}</p>}
+                            <p className="text-xs text-muted-foreground/80">
+                              <span>{Math.round(projectFte)}% on this project</span>
+                              <span className="text-muted-foreground/60"> · </span>
+                              <span className={ofTotalFteClass || 'text-muted-foreground/80'}>{Math.round(projectFte)}% of total FTE</span>
+                            </p>
                           </div>
-                        )}
+                        </div>
+                        <div className="flex items-center gap-4 text-sm">
+                          <LoadPill ftePercent={totalPeakFte} showValue={true} />
+                          {isManagerOrAbove && alloc && (
+                            <>
+                              <div className="text-right text-xs text-muted-foreground">
+                                <p>Logged {logged}h</p>
+                                <p>{formatMoney(alloc.billableHourlyRate, (project.currency || 'USD') as CurrencyCode)}/h</p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                onClick={async () => {
+                                  await deleteItem('allocations', alloc.id);
+                                  setRefreshKey(k => k + 1);
+                                }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="tasks" className="mt-4 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h2 className="text-lg font-semibold">Tasks by Phase</h2>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+              <Checkbox
+                checked={showCompletedTasks}
+                onCheckedChange={v => setShowCompletedTasks(v === true)}
+              />
+              <span>Show completed tasks</span>
+            </label>
             {isManagerOrAbove && (
-              <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
+              <Dialog
+                open={taskDialogOpen}
+                onOpenChange={open => {
+                  setTaskDialogOpen(open);
+                  if (open && !newTask.phaseId && phases.length > 0) {
+                    setNewTask(t => ({ ...t, phaseId: phases[0].id }));
+                  }
+                }}
+              >
                 <DialogTrigger asChild>
                   <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90">
                     <Plus className="h-4 w-4 mr-1" /> Add Task
@@ -357,11 +553,40 @@ export default function ProjectDetail() {
                         onChange={ids => setNewTask(t => ({ ...t, assigneeIds: ids }))}
                       />
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div>
-                        <Label>Est. Hours</Label>
-                        <Input type="number" value={newTask.estimatedHours} onChange={e => setNewTask(t => ({ ...t, estimatedHours: Number(e.target.value) }))} />
+                    <div>
+                      <Label>Duration</Label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Input
+                          type="number"
+                          min={0.5}
+                          step={0.5}
+                          value={newTask.durationValue}
+                          onChange={e => {
+                            const v = Number(e.target.value);
+                            setNewTask(t => ({ ...t, durationValue: v, estimatedHours: durationToHours(v, t.durationUnit) }));
+                          }}
+                          className="w-24"
+                        />
+                        <Select
+                          value={newTask.durationUnit}
+                          onValueChange={u => {
+                            const unit = u as TaskDurationUnit;
+                            setNewTask(t => ({ ...t, durationUnit: unit, estimatedHours: durationToHours(t.durationValue, unit) }));
+                          }}
+                        >
+                          <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="hours">Hours</SelectItem>
+                            <SelectItem value="days">Days</SelectItem>
+                            <SelectItem value="weeks">Weeks</SelectItem>
+                            <SelectItem value="months">Months</SelectItem>
+                            <SelectItem value="quarters">Quarters</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">= {durationToHours(newTask.durationValue, newTask.durationUnit)}h effort</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label>Start</Label>
                         <Input type="date" value={newTask.startDate} onChange={e => setNewTask(t => ({ ...t, startDate: e.target.value }))} />
@@ -371,7 +596,13 @@ export default function ProjectDetail() {
                         <Input type="date" value={newTask.dueDate} onChange={e => setNewTask(t => ({ ...t, dueDate: e.target.value }))} />
                       </div>
                     </div>
-                    <Button onClick={handleCreateTask} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">Create Task</Button>
+                    <Button
+                      onClick={handleCreateTask}
+                      disabled={!newTask.title}
+                      className="w-full bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      Create Task
+                    </Button>
                   </div>
                 </DialogContent>
               </Dialog>
@@ -394,14 +625,47 @@ export default function ProjectDetail() {
 
               return (
                 <Card key={phase.id}>
-                  <button
+                  <div
+                    className="w-full flex items-center justify-between p-4 text-left hover:bg-secondary/50 transition-colors cursor-pointer"
                     onClick={() => togglePhase(phase.id)}
-                    className="w-full flex items-center justify-between p-4 text-left hover:bg-secondary/50 transition-colors"
                   >
                     <div className="flex items-center gap-2">
                       {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                      <span className="font-semibold">{phase.name}</span>
-                      <span className="text-xs text-muted-foreground">{phDone}/{phaseTasks.length} done</span>
+                      <div
+                        className="flex items-center gap-2"
+                        onClick={e => {
+                          // prevent toggle when editing the phase name
+                          e.stopPropagation();
+                        }}
+                      >
+                        {isManagerOrAbove ? (
+                          <Input
+                            defaultValue={phase.name}
+                            onBlur={async e => {
+                              const value = e.target.value.trim();
+                              if (value && value !== phase.name) {
+                                await updateItem('phases', { ...phase, name: value });
+                                logActivityEvent({
+                                  userId: currentUser?.id || 'system',
+                                  projectId: project.id,
+                                  type: 'phase_updated',
+                                  message: `Phase "${phase.name}" was renamed to "${value}" in project ${project.name}`,
+                                });
+                                setRefreshKey(k => k + 1);
+                              }
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            className="h-7 text-sm font-semibold bg-background/40 border-white/10 px-2 py-1 w-40"
+                          />
+                        ) : (
+                          <span className="font-semibold">{phase.name}</span>
+                        )}
+                        <span className="text-xs text-muted-foreground">{phDone}/{phaseTasks.length} done</span>
+                      </div>
                       {typeof plannedFte === 'number' && (
                         <Badge variant="outline" className="text-[10px] bg-secondary/60 text-secondary-foreground border-border">
                           Plan {plannedFte}% FTE
@@ -413,21 +677,47 @@ export default function ProjectDetail() {
                         </Badge>
                       )}
                     </div>
-                  </button>
+                  </div>
                   {expanded && (
                     <div className="border-t divide-y">
                       {phaseTasks.length === 0 ? (
                         <div className="p-4 text-sm text-muted-foreground text-center">No tasks in this phase</div>
                       ) : (
-                        phaseTasks.map(task => {
+                        <>
+                          {(showCompletedTasks ? phaseTasks : phaseTasks.filter(t => t.status !== 'Done')).map(task => {
                           const assignees = data.users.filter(u => (task.assigneeIds || []).includes(u.id));
                           const taskLogs = timelogs.filter(t => t.taskId === task.id).reduce((s, t) => s + t.hours, 0);
                           const isOverdue = new Date(task.dueDate) < new Date() && task.status !== 'Done';
-                          const taskFte = computeTaskFtePercent(task.estimatedHours, task.startDate, task.dueDate);
+                          const taskHours = getTaskDurationHours(task);
+                          const taskFte = computeTaskFtePercent(taskHours, task.startDate, task.dueDate);
+                          const concurrencyWarnings = assignees.flatMap(u =>
+                            getConcurrencyWarnings(data, u, viewPeriod, project.startDate, project.endDate, 75)
+                              .filter(w => w.taskNames.includes(task.title))
+                              .map(w => ({ user: u, ...w }))
+                          );
+                          const noAvailabilityAssignees = assignees.filter(u => {
+                            const profile = getMemberCalendar(u);
+                            return getAvailableHoursForMember(profile, task.startDate, task.dueDate) === 0;
+                          });
+                          const canToggle = isManagerOrAbove || (task.assigneeIds || []).includes(currentUser?.id || '');
 
                           return (
-                            <div key={task.id} className={`flex items-center justify-between px-5 py-3 ${isOverdue ? 'bg-danger/5' : ''}`}>
+                            <div key={task.id} className={`flex items-center justify-between px-5 py-3 ${isOverdue ? 'bg-danger/5' : ''} ${task.status === 'Done' ? 'opacity-75' : ''}`}>
                               <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={() => canToggle && handleCompletionToggle(task)}
+                                  disabled={!canToggle}
+                                  className={cn(
+                                    'h-6 w-6 shrink-0 rounded-md border border-white/20 bg-background/50 backdrop-blur-sm flex items-center justify-center transition-opacity',
+                                    canToggle && 'hover:bg-muted/50 cursor-pointer',
+                                    !canToggle && 'cursor-default opacity-60',
+                                    task.status === 'Done' && 'bg-accent/20 border-accent/30'
+                                  )}
+                                  aria-label={task.status === 'Done' ? 'Mark incomplete' : 'Mark complete'}
+                                >
+                                  {task.status === 'Done' ? <Check className="h-3.5 w-3.5 text-accent-foreground" /> : <Square className="h-3.5 w-3.5 text-muted-foreground/60" />}
+                                </button>
                                 <Select
                                   value={task.status}
                                   onValueChange={(v) => handleStatusChange(task, v as TaskStatus)}
@@ -443,9 +733,44 @@ export default function ProjectDetail() {
                                     <SelectItem value="Done">Done</SelectItem>
                                   </SelectContent>
                                 </Select>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium truncate">{task.title}</p>
-                                  {task.description && <p className="text-xs text-muted-foreground truncate">{task.description}</p>}
+                                <div className="flex-1 min-w-0 space-y-0.5">
+                                  <Input
+                                    defaultValue={task.title}
+                                    onBlur={async e => {
+                                      const value = e.target.value.trim();
+                                      if (value && value !== task.title) {
+                                        await updateItem('tasks', { ...task, title: value });
+                                        setRefreshKey(k => k + 1);
+                                      }
+                                    }}
+                                    onKeyDown={async e => {
+                                      if (e.key === 'Enter') {
+                                        (e.target as HTMLInputElement).blur();
+                                      }
+                                    }}
+                                    className={cn(
+                                      'h-7 text-sm bg-background/40 border-white/10 px-2 py-1',
+                                      task.status === 'Done' && 'line-through text-muted-foreground'
+                                    )}
+                                  />
+                                  {task.description && (
+                                    <Input
+                                      defaultValue={task.description}
+                                      onBlur={async e => {
+                                        const value = e.target.value;
+                                        if (value !== task.description) {
+                                          await updateItem('tasks', { ...task, description: value });
+                                          setRefreshKey(k => k + 1);
+                                        }
+                                      }}
+                                      onKeyDown={async e => {
+                                        if (e.key === 'Enter') {
+                                          (e.target as HTMLInputElement).blur();
+                                        }
+                                      }}
+                                      className="h-7 text-xs bg-background/30 border-white/10 px-2 py-1 text-muted-foreground"
+                                    />
+                                  )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-4">
@@ -466,11 +791,43 @@ export default function ProjectDetail() {
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                   <span className="flex items-center gap-1">
                                     <Clock className="h-3 w-3" />
-                                    {taskLogs}/{task.estimatedHours}h
+                                    {taskLogs}/{taskHours}h
                                   </span>
                                   <Badge variant="outline" className="text-[10px] font-normal bg-accent/5 text-accent border-accent/20">
                                     {taskFte}% FTE
                                   </Badge>
+                                  {concurrencyWarnings.length > 0 && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="text-amber-600 dark:text-amber-400 text-[10px] font-medium cursor-help">
+                                          Concurrency
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-[220px]">
+                                        {concurrencyWarnings.slice(0, 3).map((w, i) => (
+                                          <p key={i} className="text-xs">
+                                            {w.user.name} at {Math.round(w.ftePercent)}% during {w.slotLabel} (overlapping tasks)
+                                          </p>
+                                        ))}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
+                                  {noAvailabilityAssignees.length > 0 && (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="text-amber-600 dark:text-amber-400 text-[10px] font-medium cursor-help">
+                                          No hours
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-[220px]">
+                                        {noAvailabilityAssignees.map(u => (
+                                          <p key={u.id} className="text-xs">
+                                            {u.name} has no available hours during this task window
+                                          </p>
+                                        ))}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  )}
                                 </div>
                                 {isOverdue && (
                                   <Badge variant="outline" className="bg-danger/10 text-danger border-danger/20 text-xs">
@@ -479,24 +836,57 @@ export default function ProjectDetail() {
                                 )}
                                 {isManagerOrAbove && (
                                   <div className="flex items-center gap-1">
-                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEditTask(task)}>
-                                      <Pencil className="h-3.5 w-3.5" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDeleteTask(task.id)}>
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
+                                    {inlineDeleteTaskId === task.id ? (
+                                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground bg-destructive/5 rounded-full px-3 py-1">
+                                        <span>Delete this task? Member FTE % will update.</span>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 px-2 text-xs text-destructive hover:text-destructive"
+                                          onClick={async () => {
+                                            await handleDeleteTask(task.id);
+                                            setInlineDeleteTaskId(null);
+                                          }}
+                                        >
+                                          Confirm
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 px-2 text-xs"
+                                          onClick={() => setInlineDeleteTaskId(null)}
+                                        >
+                                          Cancel
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-destructive hover:text-destructive"
+                                        onClick={() => setInlineDeleteTaskId(task.id)}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    )}
                                   </div>
                                 )}
                               </div>
                             </div>
                           );
-                        })
+                        })}
+                        </>
                       )}
                     </div>
                   )}
                 </Card>
               );
             })
+          )}
+          {!showCompletedTasks && doneTasks > 0 && (
+            <p className="text-xs text-muted-foreground/70 text-center py-2">
+              {doneTasks} task{doneTasks !== 1 ? 's' : ''} completed
+            </p>
           )}
         </TabsContent>
 
@@ -535,6 +925,16 @@ export default function ProjectDetail() {
                     onChange={ids => setEditingTask(t => t ? { ...t, assigneeIds: ids } : t)}
                   />
                 </div>
+                {editingTask.assigneeIds.length > 1 && (
+                  <div>
+                    <Label className="text-xs">Allocation split %</Label>
+                    <AssigneeSplitControl
+                      task={editingTask}
+                      assignees={data.users.filter(u => editingTask.assigneeIds.includes(u.id))}
+                      onChange={split => setEditingTask(t => t ? { ...t, assigneeSplit: split } : t)}
+                    />
+                  </div>
+                )}
                 <div>
                   <Label>Status</Label>
                   <Select value={editingTask.status} onValueChange={v => setEditingTask(t => t ? { ...t, status: v as TaskStatus } : t)}>
@@ -547,11 +947,42 @@ export default function ProjectDetail() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <Label>Est. Hours</Label>
-                    <Input type="number" value={editingTask.estimatedHours} onChange={e => setEditingTask(t => t ? { ...t, estimatedHours: Number(e.target.value) } : t)} />
+                <div>
+                  <Label>Duration</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Input
+                      type="number"
+                      min={0.5}
+                      step={0.5}
+                      value={editingTask.durationValue ?? 0}
+                      onChange={e => {
+                        const v = Number(e.target.value);
+                        const unit = editingTask.durationUnit ?? 'hours';
+                        setEditingTask(t => t ? { ...t, durationValue: v, estimatedHours: durationToHours(v, unit) } : t);
+                      }}
+                      className="w-24"
+                    />
+                    <Select
+                      value={editingTask.durationUnit ?? 'hours'}
+                      onValueChange={u => {
+                        const unit = u as TaskDurationUnit;
+                        const val = editingTask.durationValue ?? editingTask.estimatedHours ?? 0;
+                        setEditingTask(t => t ? { ...t, durationUnit: unit, durationValue: val, estimatedHours: durationToHours(val, unit) } : t);
+                      }}
+                    >
+                      <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="hours">Hours</SelectItem>
+                        <SelectItem value="days">Days</SelectItem>
+                        <SelectItem value="weeks">Weeks</SelectItem>
+                        <SelectItem value="months">Months</SelectItem>
+                        <SelectItem value="quarters">Quarters</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">= {getTaskDurationHours(editingTask)}h effort</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Start</Label>
                     <Input type="date" value={editingTask.startDate} onChange={e => setEditingTask(t => t ? { ...t, startDate: e.target.value } : t)} />
@@ -568,9 +999,65 @@ export default function ProjectDetail() {
         </Dialog>
 
         <TabsContent value="gantt" className="mt-4">
-          <GanttView key={refreshKey} phases={phases} tasks={visibleTasks} users={data.users} projectStart={project.startDate} projectEnd={project.endDate} />
+          <div className="relative">
+            <div ref={ganttChartRef}>
+              <GanttView key={refreshKey} phases={phases} tasks={visibleTasks} users={data.users} projectStart={project.startDate} projectEnd={project.endDate} />
+            </div>
+            <button
+              type="button"
+              onClick={() => setExportPanelOpen(true)}
+              className="absolute top-2 right-2 h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm border border-white/10 text-muted-foreground hover:text-foreground hover:bg-background/90 flex items-center justify-center shadow-sm transition-colors"
+              aria-label="Export Gantt"
+            >
+              <FileDown className="h-4 w-4" />
+            </button>
+          </div>
+          <GanttExportPanel
+            open={exportPanelOpen}
+            onOpenChange={setExportPanelOpen}
+            data={data}
+            exportTitle={project.name}
+            isCumulative={false}
+            singleProjectId={project.id}
+            chartRef={ganttChartRef}
+            onExportPdf={(blob, filename) => {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = filename;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            onExportPng={(blob, filename) => {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = filename;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          />
+        </TabsContent>
+
+        <TabsContent value="activity" className="mt-4">
+          <Card className="bg-card/80 backdrop-blur-sm border-white/10">
+            <CardHeader>
+              <CardTitle className="text-sm font-medium">Activity Feed</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <ActivityFeed events={projectActivity} />
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
+
+      <ProjectTeamEditor
+        projectId={project.id}
+        open={teamEditorOpen}
+        onOpenChange={setTeamEditorOpen}
+        onUpdated={() => setRefreshKey(k => k + 1)}
+        initialData={data}
+      />
 
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent>
@@ -678,7 +1165,10 @@ function GanttView({ phases, tasks, users, projectStart, projectEnd }: {
                       return (
                         <div key={task.id} className="relative h-7 mb-1">
                           <div
-                            className="absolute h-6 rounded-md flex items-center px-2 text-xs font-medium truncate"
+                            className={cn(
+                              'absolute h-6 rounded-md flex items-center px-2 text-xs font-medium truncate',
+                              task.status === 'Done' && 'line-through'
+                            )}
                             style={{
                               ...bar,
                               backgroundColor: isOverdue ? 'hsl(0, 72%, 51%)' : phaseColors[pi % phaseColors.length],

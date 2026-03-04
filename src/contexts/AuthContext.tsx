@@ -36,10 +36,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       const data = await loadData();
       if (cancelled) return;
-      setUsers(data.users);
+      const userList = Array.isArray(data?.users) ? data.users : [];
+      setUsers(userList);
       const saved = localStorage.getItem('current_user_id');
-      const user = saved ? data.users.find(u => u.id === saved) : data.users[0];
-      setCurrentUser(user || data.users[0] || null);
+      const user = saved ? userList.find((u: User) => u.id === saved) : userList[0];
+      setCurrentUser(user || userList[0] || null);
       setDataLoaded(true);
     })();
     return () => { cancelled = true; };

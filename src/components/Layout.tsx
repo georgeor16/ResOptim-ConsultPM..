@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import { useAuth } from '@/contexts/AuthContext';
+import { NotificationBell } from '@/components/NotificationCenter';
 
 export function Layout({ children }: { children: ReactNode }) {
   const { currentUser, dataLoaded } = useAuth();
@@ -21,6 +22,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="flex-1 flex flex-col min-w-0">
           <header className="h-12 flex items-center border-b px-4 bg-card shrink-0">
             <SidebarTrigger className="mr-4" />
+            <NotificationBell />
           </header>
           <main className="flex-1 overflow-auto p-6">
             {children}
