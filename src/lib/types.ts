@@ -30,6 +30,30 @@ export interface CalendarProfile {
   blackoutDates: string[];
 }
 
+export type AvailabilityType = 'full_time' | 'part_time' | 'contractor' | 'shared';
+
+export interface RoleTaxonomy {
+  id: string;
+  name: string;
+  orgId: string;
+  color?: string;
+  order?: number;
+  archived?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SkillTaxonomy {
+  id: string;
+  name: string;
+  orgId: string;
+  category?: string;
+  order?: number;
+  archived?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -41,6 +65,18 @@ export interface User {
   currency: string; // CurrencyCode
   /** Optional calendar for timezone, working days, and availability. */
   calendar?: CalendarProfile;
+  /** Optional team identifier for multi-team organisations. */
+  teamId?: string;
+  /** Optional organisation identifier for multi-organisation setups. */
+  organisationId?: string;
+  /** Primary role in the organisation taxonomy (foreign key to RoleTaxonomy.id). */
+  primaryRole?: string | null;
+  /** Skill/specialisation tag ids (foreign keys to SkillTaxonomy.id). */
+  skills?: string[];
+  /** Availability type (full-time, part-time, contractor, shared). */
+  availabilityType?: AvailabilityType;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Project {
@@ -57,6 +93,12 @@ export interface Project {
   monthlyFee: number; // amount: monthly fee or total project fee depending on feeType
   currency: string; // CurrencyCode
   createdAt: string;
+  /** Optional team identifier that owns this project. */
+  teamId?: string;
+  /** Optional organisation identifier (for multi-org setups). */
+  organisationId?: string;
+  /** Optional client workspace identifier when running in client deployment mode. */
+  clientWorkspaceId?: string;
 }
 
 export interface Allocation {
@@ -131,6 +173,21 @@ export interface Alert {
   createdAt: string;
 }
 
+/** High-level organisation entity above teams. */
+export interface Organisation {
+  id: string;
+  name: string;
+  /** Organisation-level toggle for client workspaces to use shared taxonomy (if implemented). */
+  useOrgTaxonomyByDefault?: boolean;
+}
+
+/** Logical team within an organisation. */
+export interface Team {
+  id: string;
+  name: string;
+  organisationId?: string;
+}
+
 export interface AppData {
   users: User[];
   projects: Project[];
@@ -140,4 +197,10 @@ export interface AppData {
   subtasks: SubTask[];
   timelogs: TimeLog[];
   alerts: Alert[];
+  /** Optional multi-org / multi-team structures. */
+  organisations?: Organisation[];
+  teams?: Team[];
+  /** Organisation-scoped taxonomy tables (RoleTaxonomy/SkillTaxonomy). */
+  roles?: RoleTaxonomy[];
+  skills?: SkillTaxonomy[];
 }

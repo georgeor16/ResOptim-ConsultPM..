@@ -1,7 +1,10 @@
-import type { Project, Task, User } from './types';
+import type { Project, Task, User, Role } from './types';
 import { cn } from './utils';
 
-export type NotificationCategory = 'task' | 'reassignment' | 'bandwidth' | 'project';
+export type NotificationCategory = 'task' | 'reassignment' | 'bandwidth' | 'project' | 'org' | 'simulation' | 'permissions' | 'digest';
+
+export type NotificationScope = 'personal' | 'team' | 'org' | 'client';
+export type NotificationPriority = 'critical' | 'attention' | 'info';
 
 export type NotificationType =
   | 'task_assigned'
@@ -14,18 +17,47 @@ export type NotificationType =
   | 'bandwidth_overlap'
   | 'project_added'
   | 'phase_updated'
-  | 'project_status';
+  | 'project_status'
+  | 'simulation_shared'
+  | 'simulation_approval'
+  | 'simulation_feedback'
+  | 'simulation_applied'
+  | 'org_capacity_crunch'
+  | 'org_cross_team_conflict'
+  | 'org_sharing_opportunity'
+  | 'org_health_decline'
+  | 'org_kickoff_risk'
+  | 'org_digest'
+  | 'org_permission_change'
+  | 'org_team_changed';
 
 export interface NotificationItem {
   id: string;
   userId: string;
   type: NotificationType;
   category: NotificationCategory;
+  scope?: NotificationScope;
+  priority?: NotificationPriority;
+  /** Optional audience restriction; if present, only these user roles should see it. */
+  audience?: Role[];
+  orgId?: string;
+  teamId?: string;
+  affectedTeamIds?: string[];
+  /** Coordinated alerts share a group id. */
+  groupId?: string;
+  /** When an org alert is coordinated to other roles. */
+  alsoSentToManagersCount?: number;
+  /** Critical org alerts require acknowledgement and do not auto-archive until acknowledged. */
+  requiresAck?: boolean;
+  acknowledgedAt?: string;
+  acknowledgedByUserId?: string;
   title: string;
   message: string;
   projectId?: string;
   taskId?: string;
   relatedUserId?: string;
+  /** For simulation notifications: link to shared simulation review */
+  sharedSimulationId?: string;
   createdAt: string; // ISO
   read: boolean;
 }
@@ -96,7 +128,13 @@ function saveJson<T>(key: string, value: T): void {
 export function loadUserNotifications(userId: string): NotificationItem[] {
   const all = loadJson<NotificationItem[]>(`${NOTIF_KEY_PREFIX}${userId}`, []);
   const cutoff = Date.now() - 30 * DAY_MS;
-  const fresh = all.filter(n => new Date(n.createdAt).getTime() >= cutoff);
+  const fresh = all.filter(n => {
+    const t = new Date(n.createdAt).getTime();
+    if (Number.isFinite(t) && t >= cutoff) return true;
+    if (n.requiresAck && !n.acknowledgedAt) return true;
+    if (n.priority === 'critical' && !n.acknowledgedAt) return true;
+    return false;
+  });
   if (fresh.length !== all.length) {
     saveJson(`${NOTIF_KEY_PREFIX}${userId}`, fresh);
   }
@@ -118,6 +156,35 @@ export function markAllNotificationsRead(userId: string): void {
   if (!existing.length) return;
   const next = existing.map(n => (n.read ? n : { ...n, read: true }));
   saveUserNotifications(userId, next);
+}
+
+export function markNotificationRead(userId: string, notificationId: string): void {
+  const existing = loadUserNotifications(userId);
+  const next = existing.map(n => (n.id === notificationId ? { ...n, read: true } : n));
+  saveUserNotifications(userId, next);
+}
+
+export function acknowledgeNotification(userId: string, notificationId: string, actorUserId?: string): void {
+  const existing = loadUserNotifications(userId);
+  const now = nowIso();
+  const next = existing.map(n => {
+    if (n.id !== notificationId) return n;
+    return {
+      ...n,
+      read: true,
+      acknowledgedAt: n.acknowledgedAt ?? now,
+      acknowledgedByUserId: n.acknowledgedByUserId ?? actorUserId,
+    };
+  });
+  saveUserNotifications(userId, next);
+}
+
+export function getNotificationCounts(userId: string): { unread: number; criticalUnacked: number } {
+  const list = loadUserNotifications(userId);
+  return {
+    unread: list.filter(n => !n.read).length,
+    criticalUnacked: list.filter(n => (n.priority === 'critical' || n.requiresAck) && !n.acknowledgedAt).length,
+  };
 }
 
 export function loadNotificationPreferences(userId: string): NotificationPreferences {
@@ -297,6 +364,9 @@ export function notificationTypeColor(type: NotificationType): string {
   if (type === 'task_deleted') {
     return 'text-destructive';
   }
+  if (type === 'simulation_shared' || type === 'simulation_approval' || type === 'simulation_feedback' || type === 'simulation_applied') {
+    return 'text-amber-600 dark:text-amber-400';
+  }
   return 'text-muted-foreground';
 }
 
@@ -306,6 +376,9 @@ export function notificationAccentBg(type: NotificationType): string {
   }
   if (type === 'task_deleted') {
     return 'bg-destructive/10';
+  }
+  if (type === 'simulation_shared' || type === 'simulation_approval' || type === 'simulation_feedback' || type === 'simulation_applied') {
+    return 'bg-amber-500/10';
   }
   return 'bg-accent/5';
 }

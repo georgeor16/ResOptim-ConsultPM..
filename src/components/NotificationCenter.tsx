@@ -8,11 +8,14 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   addNotification,
+  acknowledgeNotification,
   formatRelativeTime,
+  getNotificationCounts,
   loadActivityEvents,
   loadNotificationPreferences,
   loadUserNotifications,
   markAllNotificationsRead,
+  markNotificationRead,
   notificationAccentBg,
   notificationTypeColor,
   saveNotificationPreferences,
@@ -34,7 +37,7 @@ export function NotificationBell() {
 
   if (!currentUser) return null;
 
-  const unread = notifications.filter(n => !n.read).length;
+  const counts = getNotificationCounts(currentUser.id);
 
   return (
     <>
@@ -45,9 +48,18 @@ export function NotificationBell() {
         aria-label="Notifications"
       >
         <Bell className="h-4 w-4" />
-        {unread > 0 && (
-          <span className="absolute -top-1 -right-1 h-4 min-w-[16px] rounded-full bg-accent text-[10px] font-medium text-accent-foreground flex items-center justify-center px-0.5 shadow-sm">
-            {unread > 9 ? '9+' : unread}
+        {(counts.unread > 0 || counts.criticalUnacked > 0) && (
+          <span className="absolute -top-1 -right-1 flex items-center gap-1">
+            {counts.criticalUnacked > 0 && (
+              <span className="h-4 min-w-[16px] rounded-full bg-red-500 text-[10px] font-medium text-white flex items-center justify-center px-0.5 shadow-sm">
+                {counts.criticalUnacked > 9 ? '9+' : counts.criticalUnacked}
+              </span>
+            )}
+            {counts.unread > 0 && (
+              <span className="h-4 min-w-[16px] rounded-full bg-accent text-[10px] font-medium text-accent-foreground flex items-center justify-center px-0.5 shadow-sm">
+                {counts.unread > 9 ? '9+' : counts.unread}
+              </span>
+            )}
           </span>
         )}
       </button>
@@ -77,6 +89,20 @@ function NotificationSheet({ open, onOpenChange }: NotificationSheetProps) {
   if (!currentUser || !prefs) return null;
 
   const unread = notifications.filter(n => !n.read).length;
+  const filtered = notifications.filter(n => {
+    if (n.audience && !n.audience.includes(currentUser.role)) return false;
+    // Basic role scope filtering for org alerts (managers see only those with their teamId or transparency)
+    if (n.scope === 'org' && currentUser.role === 'manager') {
+      if (n.teamId && currentUser.teamId && n.teamId === currentUser.teamId) return true;
+      if (Array.isArray(n.affectedTeamIds) && currentUser.teamId && n.affectedTeamIds.includes(currentUser.teamId)) return true;
+      // otherwise hide org-wide details from managers
+      return false;
+    }
+    if (n.scope === 'org' && currentUser.role === 'member') {
+      return false;
+    }
+    return true;
+  });
 
   const handleMarkAllRead = () => {
     markAllNotificationsRead(currentUser.id);
@@ -84,6 +110,15 @@ function NotificationSheet({ open, onOpenChange }: NotificationSheetProps) {
   };
 
   const handleClickNotification = (n: NotificationItem) => {
+    if (!n.read) {
+      markNotificationRead(currentUser.id, n.id);
+      setNotifications(loadUserNotifications(currentUser.id));
+    }
+    if (n.sharedSimulationId) {
+      navigate(`/simulation/review/${n.sharedSimulationId}`);
+      onOpenChange(false);
+      return;
+    }
     if (n.projectId) {
       navigate(`/projects/${n.projectId}`);
       onOpenChange(false);
@@ -194,28 +229,61 @@ function NotificationSheet({ open, onOpenChange }: NotificationSheetProps) {
 
         <ScrollArea className="flex-1">
           <div className="px-5 py-4 space-y-3">
-            {notifications.length === 0 ? (
+            {filtered.length === 0 ? (
               <p className="text-xs text-muted-foreground/80">No notifications yet.</p>
             ) : (
-              notifications.slice(0, 50).map(n => (
-                <button
+              filtered.slice(0, 50).map(n => (
+                <div
                   key={n.id}
-                  type="button"
-                  onClick={() => handleClickNotification(n)}
                   className={cn(
                     'w-full text-left rounded-lg px-3 py-2.5 text-xs transition-colors',
                     'bg-card/40 border border-white/5 hover:bg-card/70',
                     !n.read && 'ring-1 ring-accent/40',
                   )}
                 >
-                  <div className="flex items-center justify-between gap-2 mb-0.5">
-                    <span className={cn('font-medium', notificationTypeColor(n.type))}>{n.title}</span>
-                    <span className="text-[10px] text-muted-foreground/80">{formatRelativeTime(n.createdAt)}</span>
-                  </div>
-                  <p className={cn('text-[11px] leading-snug text-muted-foreground/90', notificationAccentBg(n.type) && '')}>
-                    {n.message}
-                  </p>
-                </button>
+                  <button type="button" onClick={() => handleClickNotification(n)} className="w-full text-left">
+                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className={cn('font-medium truncate', notificationTypeColor(n.type))}>{n.title}</span>
+                        {n.scope === 'org' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-white/10 bg-muted/20 text-muted-foreground">
+                            Org
+                          </span>
+                        )}
+                        {n.priority === 'critical' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/30">
+                            Critical
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground/80">{formatRelativeTime(n.createdAt)}</span>
+                    </div>
+                    <p className={cn('text-[11px] leading-snug text-muted-foreground/90', notificationAccentBg(n.type) && '')}>
+                      {n.message}
+                    </p>
+                  </button>
+
+                  {n.requiresAck && !n.acknowledgedAt && (
+                    <div className="pt-2 flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 rounded-full text-[11px]"
+                        onClick={() => {
+                          acknowledgeNotification(currentUser.id, n.id, currentUser.id);
+                          setNotifications(loadUserNotifications(currentUser.id));
+                        }}
+                      >
+                        Acknowledge
+                      </Button>
+                      {typeof n.alsoSentToManagersCount === 'number' && n.alsoSentToManagersCount > 0 && (
+                        <span className="text-[10px] text-muted-foreground/80">
+                          Also sent to {n.alsoSentToManagersCount} team managers
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
               ))
             )}
             {notifications.length > 50 && (

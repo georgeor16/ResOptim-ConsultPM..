@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData, addItem, updateItem, deleteItem, genId } from '@/lib/store';
+import { checkExternalConflictsAfterChange } from '@/lib/bandwidthConflicts';
+import { showExternalConflictToast } from '@/components/ConflictResolutionSheet';
 import type { AppData, CalendarProfile, User } from '@/lib/types';
+import { getMemberTotalPeakFte, getDefaultPeriodBounds } from '@/lib/bandwidth';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +41,8 @@ export default function Team() {
   useEffect(() => {
     refreshFxRates().then(setRates);
   }, []);
+
+  const periodBounds = useMemo(() => getDefaultPeriodBounds('month'), []);
 
   const computedHourlyRate = form.annualSalary ? parseFloat(form.annualSalary) / 12 / 160 : 0;
   const computedBillableRate = computedHourlyRate * 1.25;
@@ -184,7 +189,7 @@ export default function Team() {
                 const userAllocations = data.allocations.filter(a =>
                   a.userId === user.id && activeProjects.some(p => p.id === a.projectId)
                 );
-                const totalFTE = userAllocations.reduce((s, a) => s + a.ftePercent, 0);
+                const totalFTE = getMemberTotalPeakFte(data, user, 'month', periodBounds.start, periodBounds.end);
                 const impliedCost = conv(user.monthlySalary * (totalFTE / 100), userCurrency);
                 const utilization = totalFTE;
 
@@ -220,7 +225,7 @@ export default function Team() {
                     <td className="p-3 text-right">{getCurrencySymbol(userCurrency)}{user.billableHourlyRate.toFixed(2)}/h</td>
                     <td className="p-3 text-center text-xs text-muted-foreground">{userCurrency}</td>
                     <td className="p-3 text-right">
-                      <span className={utilizationColor + ' font-medium'}>{totalFTE}%</span>
+                      <span className={utilizationColor + ' font-medium'}>{Math.round(totalFTE)}%</span>
                     </td>
                     {isAdmin && <td className="p-3 text-right">{formatMoney(Math.round(impliedCost), baseCurrency)}</td>}
                     <td className="p-3 text-right">
@@ -231,7 +236,7 @@ export default function Team() {
                             style={{ width: `${Math.min(utilization, 100)}%` }}
                           />
                         </div>
-                        <span className="text-xs text-muted-foreground w-8">{utilization}%</span>
+                        <span className="text-xs text-muted-foreground w-8">{Math.round(utilization)}%</span>
                       </div>
                     </td>
                     <td className="p-3 text-right text-muted-foreground">{userAllocations.length}</td>
@@ -277,10 +282,19 @@ export default function Team() {
             <CalendarProfileEditor
               user={data.users.find(u => u.id === calendarUser.id) ?? calendarUser}
               onSave={async (calendar: CalendarProfile) => {
+                const userId = calendarUser.id;
                 await updateItem('users', { ...calendarUser, calendar });
                 setCalendarUser(null);
                 await refreshUsers();
+                const freshData = await loadData();
+                setData(freshData);
                 setRefreshKey(k => k + 1);
+                checkExternalConflictsAfterChange(freshData, {
+                  userId,
+                  sourceProjectId: '',
+                  changeType: 'calendar_changed',
+                  onToast: showExternalConflictToast,
+                });
               }}
             />
           </DialogContent>

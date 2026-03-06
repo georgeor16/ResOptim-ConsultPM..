@@ -300,6 +300,10 @@ export default function Projects() {
           onOpenChange={open => !open && setEditTeamProjectId(null)}
           onUpdated={() => setRefreshKey(k => k + 1)}
           initialData={data}
+          onNavigateToProject={(projectId) => {
+            setEditTeamProjectId(null);
+            navigate(`/projects/${projectId}`);
+          }}
         />
       )}
 

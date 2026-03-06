@@ -343,3 +343,71 @@ export function getDefaultPeriodBounds(viewPeriod: ViewPeriod): { start: string;
   }
   return { start: dateStr(start), end: dateStr(end) };
 }
+
+/** Capacity vs task FTE conflict: project capacity (ceiling) vs actual task demand. */
+export type CapacityConflictStatus = 'ok' | 'approaching' | 'exceeds';
+
+const APPROACHING_THRESHOLD = 10; // within 10% below capacity = approaching
+
+export interface CapacityConflict {
+  taskFte: number;
+  capacity: number;
+  status: CapacityConflictStatus;
+  overBy?: number; // when exceeds: taskFte - capacity
+}
+
+/**
+ * Compare project-level capacity (ceiling) to task-derived FTE demand.
+ * Used to flag when tasks require more than the member's stated capacity.
+ */
+export function getCapacityConflict(
+  taskFte: number,
+  capacity: number
+): CapacityConflict {
+  const overBy = Math.max(0, taskFte - capacity);
+  if (taskFte > capacity) {
+    return { taskFte, capacity, status: 'exceeds', overBy };
+  }
+  if (capacity > 0 && taskFte >= capacity - APPROACHING_THRESHOLD) {
+    return { taskFte, capacity, status: 'approaching' };
+  }
+  return { taskFte, capacity, status: 'ok' };
+}
+
+/** Task with approximate FTE % contribution for this member (for "Review tasks" list). */
+export function getMemberProjectTasksWithFte(
+  data: AppData,
+  userId: string,
+  projectId: string,
+  viewPeriod: ViewPeriod,
+  periodStart: string,
+  periodEnd: string
+): { task: Task; ftePercent: number }[] {
+  const user = data.users.find(u => u.id === userId);
+  if (!user) return [];
+  const tasks = activeTasksForMember(data, userId, projectId);
+  const slotFtes = getMemberSlotFtes(data, user, viewPeriod, periodStart, periodEnd, projectId);
+  const peakSlot = slotFtes.length > 0
+    ? slotFtes.reduce((best, s) => (s.ftePercent > best.ftePercent ? s : best), slotFtes[0])
+    : null;
+  const profile = getMemberCalendar(user);
+  const result: { task: Task; ftePercent: number }[] = [];
+  for (const task of tasks) {
+    let contrib = 0;
+    if (peakSlot && peakSlot.availableHours > 0) {
+      const committed = taskHoursInSlot(task, userId, peakSlot.slot.start, peakSlot.slot.end);
+      contrib = (committed / peakSlot.availableHours) * 100;
+    } else {
+      for (const s of slotFtes) {
+        const committed = taskHoursInSlot(task, userId, s.slot.start, s.slot.end);
+        if (s.availableHours > 0) {
+          const pct = (committed / s.availableHours) * 100;
+          if (pct > contrib) contrib = pct;
+        }
+      }
+    }
+    result.push({ task, ftePercent: contrib });
+  }
+  result.sort((a, b) => b.ftePercent - a.ftePercent);
+  return result;
+}

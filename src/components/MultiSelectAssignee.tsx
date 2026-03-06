@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Users } from 'lucide-react';
 import type { User, Allocation } from '@/lib/types';
+import type { AppData } from '@/lib/types';
+import { getMemberTotalPeakFte, getDefaultPeriodBounds, type ViewPeriod } from '@/lib/bandwidth';
 
 interface Props {
   users: User[];
@@ -12,9 +14,12 @@ interface Props {
   selectedIds: string[];
   onChange: (ids: string[]) => void;
   placeholder?: string;
+  /** When provided, total FTE % uses the same task-derived formula as the Bandwidth tab. */
+  data?: AppData | null;
+  viewPeriod?: ViewPeriod;
 }
 
-export default function MultiSelectAssignee({ users, allUsers, allocations = [], selectedIds = [], onChange, placeholder = 'Select assignees' }: Props) {
+export default function MultiSelectAssignee({ users, allUsers, allocations = [], selectedIds = [], onChange, placeholder = 'Select assignees', data, viewPeriod = 'month' }: Props) {
   const [open, setOpen] = useState(false);
 
   const toggle = (userId: string) => {
@@ -27,10 +32,15 @@ export default function MultiSelectAssignee({ users, allUsers, allocations = [],
 
   const teamIds = new Set(users.map(u => u.id));
   const externalUsers = (allUsers || []).filter(u => !teamIds.has(u.id));
+  const periodBounds = useMemo(() => getDefaultPeriodBounds(viewPeriod), [viewPeriod]);
 
   const getBandwidth = (userId: string) => {
-    const totalFTE = allocations.filter(a => a.userId === userId).reduce((s, a) => s + a.ftePercent, 0);
-    return totalFTE;
+    if (data) {
+      const user = [...users, ...externalUsers].find(u => u.id === userId);
+      if (!user) return 0;
+      return getMemberTotalPeakFte(data, user, viewPeriod, periodBounds.start, periodBounds.end);
+    }
+    return allocations.filter(a => a.userId === userId).reduce((s, a) => s + a.ftePercent, 0);
   };
 
   const selectedNames = [...users, ...externalUsers]
@@ -58,7 +68,7 @@ export default function MultiSelectAssignee({ users, allUsers, allocations = [],
         </div>
         <span className="truncate flex-1">{user.name}</span>
         <span className={`text-[10px] font-medium shrink-0 ${bandwidthColor}`}>
-          {bandwidth}%
+          {Math.round(bandwidth)}%
         </span>
       </label>
     );

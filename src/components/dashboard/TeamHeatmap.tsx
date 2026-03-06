@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { AppData } from '@/lib/types';
+import { getMemberProjectFtePercent, getMemberTotalPeakFte, getDefaultPeriodBounds } from '@/lib/bandwidth';
+
+const VIEW_PERIOD = 'month' as const;
 
 interface Props {
   data: AppData;
@@ -11,25 +14,27 @@ interface Props {
 export default function TeamHeatmap({ data }: Props) {
   const navigate = useNavigate();
   const [showOverallocatedOnly, setShowOverallocatedOnly] = useState(false);
-  const { users, activeProjects, matrix } = useMemo(() => {
+  const periodBounds = useMemo(() => getDefaultPeriodBounds(VIEW_PERIOD), []);
+
+  const { users, activeProjects, matrix, totalByUser } = useMemo(() => {
     const activeProjects = data.projects.filter(p => p.status === 'Active');
     const users = data.users;
 
-    // Build matrix: user → project → ftePercent
+    // Build matrix: user → project → ftePercent (same task-derived formula as Bandwidth tab)
     const matrix: Record<string, Record<string, number>> = {};
+    const totalByUser: Record<string, number> = {};
     for (const u of users) {
       matrix[u.id] = {};
       for (const p of activeProjects) {
-        const alloc = data.allocations.find(a => a.userId === u.id && a.projectId === p.id);
-        matrix[u.id][p.id] = alloc ? alloc.ftePercent : 0;
+        matrix[u.id][p.id] = getMemberProjectFtePercent(data, u, p.id, VIEW_PERIOD, periodBounds.start, periodBounds.end);
       }
+      totalByUser[u.id] = getMemberTotalPeakFte(data, u, VIEW_PERIOD, periodBounds.start, periodBounds.end);
     }
 
-    return { users, activeProjects, matrix };
-  }, [data]);
+    return { users, activeProjects, matrix, totalByUser };
+  }, [data, periodBounds.start, periodBounds.end]);
 
-  const getTotalFte = (userId: string) =>
-    Object.values(matrix[userId] || {}).reduce((s, v) => s + v, 0);
+  const getTotalFte = (userId: string) => totalByUser[userId] ?? 0;
 
   const cellColor = (fte: number) => {
     if (fte === 0) return 'bg-muted/30';
@@ -46,7 +51,7 @@ export default function TeamHeatmap({ data }: Props) {
   };
 
   const displayUsers = showOverallocatedOnly
-    ? users.filter(u => getTotalFte(u.id) > 100)
+    ? users.filter(u => Math.round(getTotalFte(u.id)) > 100)
     : users;
 
   if (users.length === 0 || activeProjects.length === 0) return null;
@@ -113,20 +118,20 @@ export default function TeamHeatmap({ data }: Props) {
                           <td key={p.id} className="py-1.5 px-1 text-center">
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <div className={`mx-auto h-6 w-full max-w-[60px] rounded-sm flex items-center justify-center ${cellColor(fte)} transition-colors cursor-default`}>
-                                  {fte > 0 && <span className="text-foreground/80 text-[10px]">{fte}%</span>}
+                                <div className={`mx-auto h-6 w-full max-w-[60px] rounded-sm flex items-center justify-center ${cellColor(Math.round(fte))} transition-colors cursor-default`}>
+                                  {fte > 0 && <span className="text-foreground/80 text-[10px]">{Math.round(fte)}%</span>}
                                 </div>
                               </TooltipTrigger>
                               <TooltipContent side="top" className="text-xs">
                                 <p className="font-medium">{user.name}</p>
-                                <p className="text-muted-foreground">{p.name}: {fte}% FTE</p>
+                                <p className="text-muted-foreground">{p.name}: {Math.round(fte)}% FTE</p>
                               </TooltipContent>
                             </Tooltip>
                           </td>
                         );
                       })}
                       <td className="py-1.5 px-2 text-center">
-                        <span className={totalColor(total)}>{total}%</span>
+                        <span className={totalColor(total)}>{Math.round(total)}%</span>
                       </td>
                     </tr>
                   );

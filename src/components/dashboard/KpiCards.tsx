@@ -1,9 +1,11 @@
+import { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { TrendingUp, AlertTriangle, DollarSign, Users } from 'lucide-react';
 import { formatMoney, convertCurrency, type CurrencyCode } from '@/lib/currency';
 import type { FxRates } from '@/lib/currency';
 import type { AppData } from '@/lib/types';
 import type { Project } from '@/lib/types';
+import { getMemberTotalPeakFte, getDefaultPeriodBounds } from '@/lib/bandwidth';
 
 interface KpiCardsProps {
   data: AppData;
@@ -35,17 +37,19 @@ export default function KpiCards({ data, activeProjects, baseCurrency, rates }: 
     });
   }).length;
 
+  const periodBounds = useMemo(() => getDefaultPeriodBounds('month'), []);
   const totalCapacity = data.users.length * 100;
-  const totalAllocated = data.allocations
-    .filter(a => activeProjects.some(p => p.id === a.projectId))
-    .reduce((sum, a) => sum + a.ftePercent, 0);
+  const { totalAllocated, overallocatedCount } = useMemo(() => {
+    let total = 0;
+    let over = 0;
+    for (const u of data.users) {
+      const peak = getMemberTotalPeakFte(data, u, 'month', periodBounds.start, periodBounds.end);
+      total += peak;
+      if (peak > 100) over += 1;
+    }
+    return { totalAllocated: total, overallocatedCount: over };
+  }, [data, periodBounds.start, periodBounds.end]);
   const utilizationPct = totalCapacity > 0 ? (totalAllocated / totalCapacity) * 100 : 0;
-  const overallocatedCount = data.users.filter(u => {
-    const userFte = data.allocations
-      .filter(a => a.userId === u.id && activeProjects.some(p => p.id === a.projectId))
-      .reduce((s, a) => s + a.ftePercent, 0);
-    return userFte > 100;
-  }).length;
 
   const marginColor = (m: number) => {
     if (m > 30) return 'financial-positive';
@@ -109,7 +113,7 @@ export default function KpiCards({ data, activeProjects, baseCurrency, rates }: 
             {utilizationPct.toFixed(0)}%
           </p>
           <p className="text-xs text-muted-foreground">
-            {totalAllocated}% / {totalCapacity}% FTE{overallocatedCount > 0 && ` · ${overallocatedCount} over`}
+            {Math.round(totalAllocated)}% / {totalCapacity}% FTE{overallocatedCount > 0 && ` · ${overallocatedCount} over`}
           </p>
         </CardContent>
       </Card>

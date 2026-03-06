@@ -1,5 +1,6 @@
 import type { AppData } from './types';
 import { supabase, isSupabaseConfigured } from './supabase';
+import { migrateRoleSkillTaxonomy } from './taxonomyMigration';
 
 const STORAGE_KEY = 'consulting_pm_data';
 
@@ -28,7 +29,18 @@ const TABLE_KEYS: (keyof AppData)[] = ['users', 'projects', 'allocations', 'phas
 
 async function loadFromSupabase(): Promise<AppData> {
   if (!supabase) return loadFromLocalSync();
-  const empty: AppData = { users: [], projects: [], allocations: [], phases: [], tasks: [], subtasks: [], timelogs: [], alerts: [] };
+  const empty: AppData = {
+    users: [],
+    projects: [],
+    allocations: [],
+    phases: [],
+    tasks: [],
+    subtasks: [],
+    timelogs: [],
+    alerts: [],
+    organisations: [],
+    teams: [],
+  };
   const result = { ...empty };
   for (const key of TABLE_KEYS) {
     const table = key === 'subtasks' ? 'subtasks' : key;
@@ -39,10 +51,35 @@ async function loadFromSupabase(): Promise<AppData> {
     }
     (result[key] as unknown[]) = (data || []).map(row => rowToApp(row));
   }
-  return result;
+  // Supabase currently only stores core tables. Keep org/team metadata in localStorage and merge it in.
+  try {
+    const local = loadFromLocalSync();
+    result.organisations = Array.isArray(local.organisations) ? local.organisations : [];
+    result.teams = Array.isArray(local.teams) ? local.teams : [];
+    result.roles = Array.isArray(local.roles) ? local.roles : [];
+    result.skills = Array.isArray(local.skills) ? local.skills : [];
+  } catch {
+    // ignore
+  }
+  const migrated = migrateRoleSkillTaxonomy(result);
+  if (migrated.changed) saveData(migrated.data);
+  return migrated.data;
 }
 
-const EMPTY_DATA: AppData = { users: [], projects: [], allocations: [], phases: [], tasks: [], subtasks: [], timelogs: [], alerts: [] };
+const EMPTY_DATA: AppData = {
+  users: [],
+  projects: [],
+  allocations: [],
+  phases: [],
+  tasks: [],
+  subtasks: [],
+  timelogs: [],
+  alerts: [],
+  organisations: [],
+  teams: [],
+  roles: [],
+  skills: [],
+};
 
 function loadFromLocalSync(): AppData {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -58,6 +95,10 @@ function loadFromLocalSync(): AppData {
         subtasks: Array.isArray(parsed.subtasks) ? parsed.subtasks : [],
         timelogs: Array.isArray(parsed.timelogs) ? parsed.timelogs : [],
         alerts: Array.isArray(parsed.alerts) ? parsed.alerts : [],
+        organisations: Array.isArray(parsed.organisations) ? parsed.organisations : [],
+        teams: Array.isArray(parsed.teams) ? parsed.teams : [],
+        roles: Array.isArray(parsed.roles) ? parsed.roles : [],
+        skills: Array.isArray(parsed.skills) ? parsed.skills : [],
       };
     } catch {
       // corrupted
@@ -69,7 +110,10 @@ function loadFromLocalSync(): AppData {
 /** Load all app data. Uses Supabase if configured, else localStorage. */
 export async function loadData(): Promise<AppData> {
   if (isSupabaseConfigured) return loadFromSupabase();
-  return Promise.resolve(loadFromLocalSync());
+  const base = loadFromLocalSync();
+  const migrated = migrateRoleSkillTaxonomy(base);
+  if (migrated.changed) saveData(migrated.data);
+  return Promise.resolve(migrated.data);
 }
 
 export function saveData(data: AppData): void {

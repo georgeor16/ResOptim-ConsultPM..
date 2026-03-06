@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData } from '@/lib/store';
 import type { AppData } from '@/lib/types';
+import { getMemberTotalPeakFte, getMemberProjectFtePercent } from '@/lib/bandwidth';
+import { format } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CalendarRange, ChevronDown, ChevronRight } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -118,39 +120,34 @@ export default function ResourceAllocation() {
     );
   }
 
+  const weekToBounds = (week: WeekInfo) => ({
+    start: format(week.start, 'yyyy-MM-dd'),
+    end: format(week.end, 'yyyy-MM-dd'),
+  });
+
   const getUserWeekFTE = (userId: string, week: WeekInfo) => {
-    return data.allocations
-      .filter(a => a.userId === userId)
-      .filter(a => {
-        const project = activeProjects.find(p => p.id === a.projectId);
-        if (!project) return false;
-        const ps = new Date(project.startDate);
-        const pe = new Date(project.endDate);
-        return ps <= week.end && pe >= week.start;
-      })
-      .reduce((sum, a) => sum + a.ftePercent, 0);
+    const user = data.users.find(u => u.id === userId);
+    if (!user) return 0;
+    const { start, end } = weekToBounds(week);
+    return getMemberTotalPeakFte(data, user, 'week', start, end);
   };
 
   const getBreakdown = (userId: string, week: WeekInfo) => {
-    return data.allocations
-      .filter(a => a.userId === userId)
-      .filter(a => {
-        const project = activeProjects.find(p => p.id === a.projectId);
-        if (!project) return false;
-        const ps = new Date(project.startDate);
-        const pe = new Date(project.endDate);
-        return ps <= week.end && pe >= week.start;
-      })
-      .map(a => ({
-        project: data.projects.find(p => p.id === a.projectId)?.name || '',
-        ftePercent: a.ftePercent,
-      }));
+    const user = data.users.find(u => u.id === userId);
+    if (!user) return [];
+    const { start, end } = weekToBounds(week);
+    return activeProjects
+      .map(p => ({
+        project: p.name,
+        ftePercent: getMemberProjectFtePercent(data, user, p.id, 'week', start, end),
+      }))
+      .filter(b => b.ftePercent > 0);
   };
 
   const getUserMonthFTE = (userId: string, month: MonthInfo) => {
     if (month.weeks.length === 0) return 0;
     const total = month.weeks.reduce((sum, w) => sum + getUserWeekFTE(userId, w), 0);
-    return Math.round(total / month.weeks.length);
+    return total / month.weeks.length;
   };
 
   const getUserMonthHours = (userId: string, month: MonthInfo) => {
@@ -208,7 +205,7 @@ export default function ResourceAllocation() {
                   <Collapsible open={isExpanded} onOpenChange={() => toggleCell(cellKey)}>
                     <CollapsibleTrigger className="w-full">
                       <div className={`rounded-md py-1.5 px-2 text-xs font-semibold cursor-pointer ${fteColor(avgFte)} flex items-center justify-center gap-1`}>
-                        {avgFte}%
+                        {Math.round(avgFte)}%
                         {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                       </div>
                       <div className="text-[10px] text-muted-foreground mt-1">
@@ -282,9 +279,9 @@ export default function ResourceAllocation() {
                         <td key={i} className="p-2 text-center">
                           <div
                             className={`rounded-md py-1.5 px-2 text-xs font-semibold cursor-default ${fteColor(fte)}`}
-                            title={breakdown.map(b => `${b.project}: ${b.ftePercent}%`).join('\n')}
+                            title={breakdown.map(b => `${b.project}: ${Math.round(b.ftePercent)}%`).join('\n')}
                           >
-                            {fte}%
+                            {Math.round(fte)}%
                           </div>
                         </td>
                       );
