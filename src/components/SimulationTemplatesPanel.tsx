@@ -34,23 +34,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Play, Pin, PinOff, Search, Sparkles, BookOpen, User, Star, X, ArchiveRestore } from 'lucide-react';
+import { Play, Pin, PinOff, Search, Sparkles, BookOpen, User, Star, X, ArchiveRestore, ListChecks } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 interface SimulationTemplatesPanelProps {
   data: AppData;
   onRunWithSteps: (steps: SimulationStep[], templateId?: string) => void;
+  onStepThrough?: (steps: SimulationStep[], templateId?: string) => void;
   onClose?: () => void;
 }
 
-export function SimulationTemplatesPanel({ data, onRunWithSteps, onClose }: SimulationTemplatesPanelProps) {
+export function SimulationTemplatesPanel({ data, onRunWithSteps, onStepThrough, onClose }: SimulationTemplatesPanelProps) {
   const { currentUser } = useAuth();
   const [search, setSearch] = useState('');
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [paramDialogOpen, setParamDialogOpen] = useState(false);
   const [selectedStarterId, setSelectedStarterId] = useState<StarterTemplateId | null>(null);
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
+  const [runMode, setRunMode] = useState<'runAll' | 'stepThrough' | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const templates = useMemo(() => (currentUser ? getMergedTemplates(currentUser.id) : []), [currentUser?.id, refreshKey]);
@@ -87,28 +90,46 @@ export function SimulationTemplatesPanel({ data, onRunWithSteps, onClose }: Simu
     return [...set].sort();
   }, [templates]);
 
-  const handleRunStarter = (templateId: StarterTemplateId) => {
+  const handleRunStarter = (templateId: StarterTemplateId, mode: 'runAll' | 'stepThrough' = 'runAll') => {
     setSelectedStarterId(templateId);
     setParamValues({});
+    setRunMode(mode);
     setParamDialogOpen(true);
   };
 
   const handleRunStarterSubmit = () => {
     if (!selectedStarterId) return;
+    if (!data?.users?.length) {
+      toast.error('Data is still loading. Please try again in a moment.');
+      return;
+    }
     const params: TemplateParams = {};
     const meta = getStarterTemplateMeta(selectedStarterId);
     meta.paramSchema?.forEach((p) => {
       const v = paramValues[p.key];
-      if (p.type === 'capacity' || p.type === 'number') params[p.key as keyof TemplateParams] = Number(v) as number;
-      else if (p.type === 'projects') params.projectIds = v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [];
+      if (p.type === 'capacity') {
+        const n = Number(v);
+        (params as Record<string, unknown>)[p.key] = Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 100;
+      } else if (p.type === 'number') {
+        const n = Number(v);
+        (params as Record<string, unknown>)[p.key] = Number.isFinite(n) ? n : 0;
+      } else if (p.type === 'projects') params.projectIds = v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [];
       else if (v) (params as Record<string, unknown>)[p.key] = v;
     });
     const steps = buildStarterSteps(selectedStarterId, data, params);
     if (steps.length > 0) {
-      onRunWithSteps(steps, selectedStarterId);
+      const mode = runMode ?? 'runAll';
+      if (mode === 'stepThrough' && onStepThrough) {
+        onStepThrough(steps, selectedStarterId);
+      } else {
+        onRunWithSteps(steps, selectedStarterId);
+      }
       setParamDialogOpen(false);
       setSelectedStarterId(null);
+      setRunMode(null);
       onClose?.();
+    } else {
+      toast.info('No changes to simulate. Check that you selected a team member and an active project (or other required fields).');
     }
   };
 
@@ -117,6 +138,18 @@ export function SimulationTemplatesPanel({ data, onRunWithSteps, onClose }: Simu
     if (steps?.length) {
       onRunWithSteps(steps, templateId);
       onClose?.();
+    } else {
+      toast.info('This template has no steps saved. Try running a starter template first, then save it as a personal template.');
+    }
+  };
+
+  const handleStepThroughStored = (templateId: string) => {
+    const steps = getTemplateStoredSteps(templateId);
+    if (steps?.length && onStepThrough) {
+      onStepThrough(steps, templateId);
+      onClose?.();
+    } else if (!steps?.length) {
+      toast.info('This template has no steps saved. Try running a starter template first, then save it as a personal template.');
     }
   };
 
@@ -219,18 +252,35 @@ export function SimulationTemplatesPanel({ data, onRunWithSteps, onClose }: Simu
             {t.confidenceCount >= 5 ? 'Frequently used pattern' : `Early pattern — based on ${t.confidenceCount} similar simulation${t.confidenceCount !== 1 ? 's' : ''}`}
           </span>
         )}
-        <Button
-          size="sm"
-          className="w-full mt-1 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-500/30 border-0"
-          onClick={() => {
-            if (isStarter) handleRunStarter(t.id as StarterTemplateId);
-            else if (canRunStored) handleRunStored(t.id);
-            else if (isStarter) handleRunStarter(t.id as StarterTemplateId);
-          }}
-        >
-          <Play className="h-3.5 w-3.5 mr-1.5" />
-          Run
-        </Button>
+        <div className="flex gap-1.5 mt-1">
+          <Button
+            type="button"
+            size="sm"
+            className="flex-1 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-500/30 border-0 text-xs"
+            onClick={() => {
+              if (isStarter) handleRunStarter(t.id as StarterTemplateId, 'runAll');
+              else if (canRunStored) handleRunStored(t.id);
+              else handleRunStarter(t.id as StarterTemplateId, 'runAll');
+            }}
+          >
+            <Play className="h-3.5 w-3.5 mr-1" />
+            Run all
+          </Button>
+          {onStepThrough && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 rounded-lg border-white/20 text-xs"
+              onClick={() => {
+                if (isStarter) handleRunStarter(t.id as StarterTemplateId, 'stepThrough');
+                else if (canRunStored) handleStepThroughStored(t.id);
+              }}
+            >
+              <ListChecks className="h-3.5 w-3.5 mr-1" />
+              Step through
+            </Button>
+          )}
+        </div>
       </div>
     );
   };
@@ -324,6 +374,7 @@ export function SimulationTemplatesPanel({ data, onRunWithSteps, onClose }: Simu
                 <div className="flex items-start justify-between">
                   <h3 className="text-sm font-semibold text-foreground/80">{t.name}</h3>
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
                     className="text-xs shrink-0"
@@ -419,8 +470,8 @@ export function SimulationTemplatesPanel({ data, onRunWithSteps, onClose }: Simu
               </div>
             ))}
             <div className="flex gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setParamDialogOpen(false)}>Cancel</Button>
-              <Button size="sm" onClick={handleRunStarterSubmit}>Run simulation</Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => setParamDialogOpen(false)}>Cancel</Button>
+              <Button type="button" size="sm" onClick={handleRunStarterSubmit}>Run simulation</Button>
             </div>
           </div>
         </DialogContent>

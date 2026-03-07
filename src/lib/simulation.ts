@@ -83,22 +83,21 @@ export function cloneAppData(data: AppData): AppData {
   return deepClone(data);
 }
 
-export function applyStep(data: AppData, step: SimulationStep): AppData {
-  const next = cloneAppData(data);
-
+/** Mutates `data` in place. Use for replaySteps to avoid N deep clones. */
+function applyStepInPlace(data: AppData, step: SimulationStep): void {
   switch (step.type) {
     case 'add_allocation': {
-      if (!next.allocations.some((a) => a.id === step.allocation.id)) {
-        next.allocations.push(deepClone(step.allocation));
+      if (!data.allocations.some((a) => a.id === step.allocation.id)) {
+        data.allocations.push(deepClone(step.allocation));
       }
       break;
     }
     case 'remove_allocation': {
-      next.allocations = next.allocations.filter((a) => a.id !== step.allocationId);
+      data.allocations = data.allocations.filter((a) => a.id !== step.allocationId);
       break;
     }
     case 'update_allocation_capacity': {
-      const alloc = next.allocations.find((a) => a.id === step.allocationId);
+      const alloc = data.allocations.find((a) => a.id === step.allocationId);
       if (alloc) {
         alloc.ftePercent = step.ftePercent;
         alloc.agreedMonthlyHours = Math.round((173 * step.ftePercent) / 100);
@@ -106,7 +105,7 @@ export function applyStep(data: AppData, step: SimulationStep): AppData {
       break;
     }
     case 'reassign_task': {
-      const task = next.tasks.find((t) => t.id === step.taskId);
+      const task = data.tasks.find((t) => t.id === step.taskId);
       if (task && task.assigneeIds) {
         task.assigneeIds = task.assigneeIds.filter((id) => id !== step.fromUserId);
         if (!task.assigneeIds.includes(step.toUserId)) {
@@ -116,13 +115,13 @@ export function applyStep(data: AppData, step: SimulationStep): AppData {
       break;
     }
     case 'add_task': {
-      if (!next.tasks.some((t) => t.id === step.task.id)) {
-        next.tasks.push(deepClone(step.task));
+      if (!data.tasks.some((t) => t.id === step.task.id)) {
+        data.tasks.push(deepClone(step.task));
       }
       break;
     }
     case 'update_task': {
-      const t = next.tasks.find((x) => x.id === step.taskId);
+      const t = data.tasks.find((x) => x.id === step.taskId);
       if (t) {
         if (step.patch.assigneeIds != null) t.assigneeIds = step.patch.assigneeIds;
         if (step.patch.durationValue != null) t.durationValue = step.patch.durationValue;
@@ -134,7 +133,7 @@ export function applyStep(data: AppData, step: SimulationStep): AppData {
       break;
     }
     case 'update_user_calendar': {
-      const u = next.users.find((x) => x.id === step.userId);
+      const u = data.users.find((x) => x.id === step.userId);
       if (u) {
         u.calendar = deepClone(step.calendar);
       }
@@ -143,12 +142,18 @@ export function applyStep(data: AppData, step: SimulationStep): AppData {
     default:
       break;
   }
+}
 
+export function applyStep(data: AppData, step: SimulationStep): AppData {
+  const next = cloneAppData(data);
+  applyStepInPlace(next, step);
   return next;
 }
 
 export function replaySteps(data: AppData, steps: SimulationStep[]): AppData {
-  return steps.reduce((acc, step) => applyStep(acc, step), cloneAppData(data));
+  const result = cloneAppData(data);
+  steps.forEach((step) => applyStepInPlace(result, step));
+  return result;
 }
 
 /** Conflict key: "userId:projectId" where task FTE > capacity */

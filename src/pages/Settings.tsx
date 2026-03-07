@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,11 +22,25 @@ import { CSS } from '@dnd-kit/utilities';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { GripVertical, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ExternalNotificationsSettings } from '@/components/ExternalNotificationsSettings';
+import { HealthAndAlertsSummaryPanel } from '@/components/HealthAndAlertsSummaryPanel';
+import { loadNotificationPreferences, saveNotificationPreferences, type NotificationPreferences } from '@/lib/notifications';
+import {
+  loadScheduledPauses,
+  saveScheduledPauses,
+  loadOneOffPause,
+  saveOneOffPause,
+  getOneOffPauseRemainingMinutes,
+  formatTimeForDisplay,
+  formatDaysForDisplay,
+} from '@/lib/scheduledPause';
+import { Building2, User } from 'lucide-react';
+import { PushDevicesCard } from '@/components/PushDevicesCard';
 
 const TEMPLATABLE_CATEGORIES: ProjectCategory[] = ['Scouting', 'Event', 'Full Report', 'Light Report', 'Other'];
 
 export default function SettingsPage() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, currentUser, isManagerOrAbove } = useAuth();
   const navigate = useNavigate();
   const [customTemplates, setCustomTemplates] = useState<CategoryTemplate[]>(loadCustomTemplates());
   const [editingCategory, setEditingCategory] = useState<ProjectCategory | null>(null);
@@ -38,7 +53,7 @@ export default function SettingsPage() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!currentUser) return;
     loadData().then((d) => {
       const existingOrg = d.organisations?.[0];
       const org: Organisation = existingOrg ?? { id: 'org-1', name: 'Organisation' };
@@ -48,10 +63,10 @@ export default function SettingsPage() {
         roles: Array.isArray(d.roles) ? d.roles : [],
         skills: Array.isArray(d.skills) ? d.skills : [],
       };
-      if (!existingOrg) saveData(next);
+      if (!existingOrg && isAdmin) saveData(next);
       setOrgData({ organisation: org, all: next });
     });
-  }, [isAdmin]);
+  }, [currentUser, isAdmin]);
 
   const activeRoles = useMemo(() => {
     const orgId = orgData?.organisation.id;
@@ -133,44 +148,40 @@ export default function SettingsPage() {
     saveCustomTemplates(updated);
   };
 
+  const org = orgData?.organisation ?? { id: 'org-1', name: 'Organisation' };
+  const role = currentUser?.role ?? 'member';
+
   return (
-    <div className="space-y-6 animate-fade-in max-w-2xl">
+    <div className="w-full max-w-4xl animate-fade-in space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="text-sm text-muted-foreground">Application configuration</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Sun className="h-4 w-4" />
-            Appearance
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Label className="text-xs">Theme</Label>
-          <div className="flex gap-2">
-            {([
-              { value: 'light', label: 'Light', icon: Sun },
-              { value: 'dark', label: 'Dark', icon: Moon },
-              { value: 'system', label: 'System', icon: Monitor },
-            ] as const).map(({ value, label, icon: Icon }) => (
-              <Button
-                key={value}
-                variant={theme === value ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setTheme(value)}
-                className="flex items-center gap-2"
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </Button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      {/* Organisation — visible to all roles */}
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold text-foreground/90 flex items-center gap-2">
+          <Building2 className="h-4 w-4 text-muted-foreground" />
+          Organisation
+        </h2>
+        {orgData && currentUser && (
+          <>
+            <HealthAndAlertsSummaryPanel
+              orgId={org.id}
+              orgName={org.name}
+              currentUser={currentUser}
+              canAccessInsights={isManagerOrAbove}
+              role={role}
+            />
+            <ExternalNotificationsSettings
+              orgId={org.id}
+              profileEmail={currentUser.email}
+            />
+          </>
+        )}
+      </div>
 
-      {isAdmin && (
+      {isAdmin && orgData && (
         <>
           <Card>
             <CardHeader>
@@ -399,7 +410,161 @@ export default function SettingsPage() {
           </Card>
         </>
       )}
+
+      {/* Personal — all roles */}
+      <div className="space-y-4">
+        <h2 className="text-sm font-semibold text-foreground/90 flex items-center gap-2">
+          <User className="h-4 w-4 text-muted-foreground" />
+          Personal
+        </h2>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Sun className="h-4 w-4" />
+              Appearance
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Label className="text-xs">Theme</Label>
+            <div className="flex gap-2">
+              {([
+                { value: 'light', label: 'Light', icon: Sun },
+                { value: 'dark', label: 'Dark', icon: Moon },
+                { value: 'system', label: 'System', icon: Monitor },
+              ] as const).map(({ value, label, icon: Icon }) => (
+                <Button
+                  key={value}
+                  variant={theme === value ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setTheme(value)}
+                  className="flex items-center gap-2"
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {currentUser && (
+          <>
+            <PersonalNotificationPrefs userId={currentUser.id} />
+            <PushDevicesCard userId={currentUser.id} />
+          </>
+        )}
+      </div>
     </div>
+  );
+}
+
+function PersonalNotificationPrefs({ userId }: { userId: string }) {
+  const prefs = loadNotificationPreferences(userId);
+  const [prefsState, setPrefsState] = useState<NotificationPreferences>(prefs);
+  const [schedules, setSchedules] = useState(() => loadScheduledPauses(userId));
+  const [oneOffRemaining, setOneOffRemaining] = useState(0);
+
+  useEffect(() => {
+    setPrefsState(loadNotificationPreferences(userId));
+    setSchedules(loadScheduledPauses(userId));
+    setOneOffRemaining(getOneOffPauseRemainingMinutes(userId));
+  }, [userId]);
+
+  const tickOneOff = () => setOneOffRemaining(getOneOffPauseRemainingMinutes(userId));
+  useEffect(() => {
+    const t = setInterval(tickOneOff, 60_000);
+    return () => clearInterval(t);
+  }, [userId]);
+
+  const save = (next: NotificationPreferences) => {
+    setPrefsState(next);
+    saveNotificationPreferences(next);
+  };
+
+  const removeSchedule = (id: string) => {
+    const next = schedules.filter(s => s.id !== id);
+    saveScheduledPauses(userId, next);
+    setSchedules(next);
+  };
+
+  const clearOneOff = () => {
+    saveOneOffPause(userId, null);
+    setOneOffRemaining(0);
+  };
+
+  return (
+    <Card className="bg-card/50 border-white/10">
+      <CardHeader>
+        <CardTitle className="text-sm font-medium">My notifications</CardTitle>
+        <p className="text-xs text-muted-foreground">Manage what you receive. Critical organisation alerts always apply.</p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label className="text-xs">Quiet hours & delivery</Label>
+          <div className="flex flex-wrap gap-2 items-center">
+            <Input
+              type="time"
+              value={prefsState.quietHoursStart ?? ''}
+              onChange={e => save({ ...prefsState, quietHoursStart: e.target.value || undefined })}
+              className="h-8 text-xs w-28 bg-background/50 border-white/10"
+              placeholder="Start"
+            />
+            <span className="text-xs text-muted-foreground">to</span>
+            <Input
+              type="time"
+              value={prefsState.quietHoursEnd ?? ''}
+              onChange={e => save({ ...prefsState, quietHoursEnd: e.target.value || undefined })}
+              className="h-8 text-xs w-28 bg-background/50 border-white/10"
+              placeholder="End"
+            />
+          </div>
+          <div className="space-y-1 pt-1">
+            <Label className="text-xs">Delivery email (optional)</Label>
+            <Input
+              type="email"
+              value={prefsState.deliveryEmail ?? ''}
+              onChange={e => save({ ...prefsState, deliveryEmail: e.target.value || undefined })}
+              placeholder={prefsState.deliveryEmail ? undefined : 'Use profile email'}
+              className="h-8 text-xs bg-background/50 border-white/10"
+            />
+          </div>
+          <label className="flex items-center gap-2 pt-2">
+            <Checkbox
+              checked={prefsState.emailOptOutBatched ?? false}
+              onCheckedChange={v => save({ ...prefsState, emailOptOutBatched: !!v })}
+            />
+            <span className="text-xs text-muted-foreground">Opt out of batched Attention emails (Critical always sent)</span>
+          </label>
+        </div>
+
+        <div className="space-y-2 border-t border-white/10 pt-4">
+          <Label className="text-xs">Scheduled pauses</Label>
+          <p className="text-[11px] text-muted-foreground">Pause external notifications on a schedule or for a one-off period.</p>
+          {oneOffRemaining > 0 && (
+            <div className="flex items-center justify-between rounded-lg border border-white/10 bg-muted/20 px-3 py-2 text-xs">
+              <span className="text-amber-600 dark:text-amber-400">One-off pause: {Math.floor(oneOffRemaining / 60)}h {oneOffRemaining % 60}m remaining</span>
+              <button type="button" onClick={clearOneOff} className="text-muted-foreground hover:text-foreground underline">Resume now</button>
+            </div>
+          )}
+          {schedules.map(s => (
+            <div key={s.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <span>{formatTimeForDisplay(s.fromTime)} → {formatTimeForDisplay(s.untilTime)} · {formatDaysForDisplay(s.days)}</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => window.dispatchEvent(new Event('open-manage-notifications'))} className="underline hover:text-foreground">Edit</button>
+                <button type="button" onClick={() => removeSchedule(s.id)} className="underline hover:text-destructive">Remove</button>
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event('open-manage-notifications'))}
+            className="text-xs text-muted-foreground hover:text-foreground underline"
+          >
+            Manage in Notification Delivery
+          </button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

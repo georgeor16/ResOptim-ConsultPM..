@@ -6,9 +6,12 @@ import { NotificationBell } from '@/components/NotificationCenter';
 import { SchedulingAssistantButton } from '@/components/SchedulingAssistant';
 import { ConflictResolutionTrigger } from '@/components/ConflictResolutionSheet';
 import { SimulationBanner } from '@/components/SimulationBanner';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { loadData } from '@/lib/store';
 import { runOrganisationNotificationChecks } from '@/lib/orgNotificationEngine';
+import { addNotification } from '@/lib/notifications';
+import { isInScheduledPauseWindow, getActiveScheduledPause } from '@/lib/scheduledPause';
+import { formatTimeForDisplay } from '@/lib/scheduledPause';
 
 export function Layout({ children }: { children: ReactNode }) {
   const { currentUser, dataLoaded } = useAuth();
@@ -25,10 +28,11 @@ export function Layout({ children }: { children: ReactNode }) {
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
         <AppSidebar />
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 transition-[margin-left] duration-[220ms] ease-[cubic-bezier(0.4,0,0.2,1)]">
           <header className="h-12 flex items-center border-b px-4 bg-card shrink-0">
             <SidebarTrigger className="mr-4" />
             <OrgNotificationRunner enabled={Boolean(currentUser)} />
+            {currentUser && <ScheduledPauseNotificationRunner userId={currentUser.id} />}
             <NotificationBell />
             <SchedulingAssistantButton />
           </header>
@@ -66,5 +70,47 @@ function OrgNotificationRunner({ enabled }: { enabled: boolean }) {
       window.clearInterval(t);
     };
   }, [enabled]);
+  return null;
+}
+
+function ScheduledPauseNotificationRunner({ userId }: { userId: string }) {
+  const wasInWindow = useRef(false);
+
+  useEffect(() => {
+    const check = () => {
+      const now = new Date();
+      const inWindow = isInScheduledPauseWindow(userId, now);
+      const active = getActiveScheduledPause(userId, now);
+      if (inWindow && !wasInWindow.current) {
+        wasInWindow.current = true;
+        const resumeTime = active ? formatTimeForDisplay(active.untilTime) : '';
+        addNotification({
+          id: crypto.randomUUID(),
+          userId,
+          type: 'project_status',
+          category: 'project',
+          title: 'Quick alerts paused',
+          message: resumeTime ? `Scheduled pause started — resumes at ${resumeTime}` : 'Scheduled pause started',
+          createdAt: new Date().toISOString(),
+          read: false,
+        });
+      } else if (!inWindow && wasInWindow.current) {
+        wasInWindow.current = false;
+        addNotification({
+          id: crypto.randomUUID(),
+          userId,
+          type: 'project_status',
+          category: 'project',
+          title: 'Quick alerts resumed',
+          message: 'External notifications are active again',
+          createdAt: new Date().toISOString(),
+          read: false,
+        });
+      } else if (!inWindow) wasInWindow.current = false;
+    };
+    check();
+    const t = setInterval(check, 60_000);
+    return () => clearInterval(t);
+  }, [userId]);
   return null;
 }

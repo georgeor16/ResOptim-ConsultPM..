@@ -67,6 +67,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
       enterSimulation(data);
       return;
     }
+    // replaySteps deep-clones data then applies each step; simulatedData is never a reference to baseData
     const simulatedData = replaySteps(data, steps);
     const delta = computeSimulationDelta(data, simulatedData);
     setState({
@@ -76,7 +77,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
       simulatedData,
       delta,
     });
-  }, [enterSimulation]);
+  }, []);
 
   const exitSimulation = useCallback(() => {
     setState(initialState);

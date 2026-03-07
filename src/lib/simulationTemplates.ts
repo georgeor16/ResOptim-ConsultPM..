@@ -106,6 +106,14 @@ export interface TemplateParams {
   targetUserId?: string;
 }
 
+/** Coerce capacity to 0–100; use default when value is NaN or not a number (avoids "NaN%" in labels). */
+function normalizeCapacity(value: unknown, defaultPct: number): number {
+  const n = Number(value);
+  if (typeof value !== 'number' && typeof value !== 'string') return defaultPct;
+  if (!Number.isFinite(n)) return defaultPct;
+  return Math.min(100, Math.max(0, n));
+}
+
 const STARTER_DEFINITIONS: Record<
   StarterTemplateId,
   { name: string; description: string; tags: string[]; paramSchema: SimulationTemplateMeta['paramSchema']; buildSteps: (data: AppData, params: TemplateParams) => SimulationStep[] }
@@ -125,7 +133,7 @@ const STARTER_DEFINITIONS: Record<
       const projects = (params.projectIds ?? (params.projectId ? [params.projectId] : [])).filter((pid) =>
         data.projects.some((p) => p.id === pid && p.status === 'Active')
       );
-      const capacity = Math.min(100, Math.max(0, params.capacity ?? 100));
+      const capacity = normalizeCapacity(params.capacity, 100);
       if (!user || projects.length === 0) return steps;
       projects.forEach((projectId) => {
         const project = data.projects.find((p) => p.id === projectId);
@@ -195,7 +203,7 @@ const STARTER_DEFINITIONS: Record<
       const projectId = params.projectId;
       const user = data.users.find((u) => u.id === params.userId);
       const project = data.projects.find((p) => p.id === projectId);
-      const capacity = Math.min(100, Math.max(0, params.capacity ?? 50));
+      const capacity = normalizeCapacity(params.capacity, 50);
       if (!user || !project) return steps;
       const existingAlloc = data.allocations.find((a) => a.projectId === projectId && a.userId === user.id);
       if (!existingAlloc) {
@@ -257,7 +265,7 @@ const STARTER_DEFINITIONS: Record<
       const projects = (params.projectIds ?? (params.projectId ? [params.projectId] : [])).filter((pid) =>
         data.projects.some((p) => p.id === pid)
       );
-      const capacity = Math.min(100, Math.max(0, params.capacity ?? 100));
+      const capacity = normalizeCapacity(params.capacity, 100);
       if (!user) return steps;
       projects.forEach((projectId) => {
         const project = data.projects.find((p) => p.id === projectId);
@@ -301,7 +309,7 @@ const STARTER_DEFINITIONS: Record<
     buildSteps(data, params) {
       const steps: SimulationStep[] = [];
       const user = data.users.find((u) => u.id === params.userId);
-      const capacity = Math.min(100, Math.max(0, params.capacity ?? 0));
+      const capacity = normalizeCapacity(params.capacity, 0);
       if (!user) return steps;
       const allocs = data.allocations.filter((a) => a.userId === user.id);
       allocs.forEach((alloc) => {
@@ -374,7 +382,7 @@ const STARTER_DEFINITIONS: Record<
       const projectId = params.projectId;
       const user = data.users.find((u) => u.id === params.userId);
       const project = data.projects.find((p) => p.id === projectId);
-      const capacity = Math.min(100, Math.max(0, params.capacity ?? 50));
+      const capacity = normalizeCapacity(params.capacity, 50);
       if (!user || !project) return steps;
       const existingAlloc = data.allocations.find((a) => a.projectId === projectId && a.userId === user.id);
       if (!existingAlloc) {

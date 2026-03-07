@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSimulation } from '@/contexts/SimulationContext';
@@ -12,7 +12,7 @@ import {
   getCapacityConflict,
 } from '@/lib/bandwidth';
 import { getBandwidthStatus } from '@/lib/fte';
-import { computeSimulationDelta, saveSimulationSnapshot } from '@/lib/simulation';
+import { computeSimulationDelta, saveSimulationSnapshot, replaySteps, type SimulationStep } from '@/lib/simulation';
 import { getSharedSimulation, markSharedSimulationApplied } from '@/lib/sharedSimulations';
 import { logActivityEvent, addNotification } from '@/lib/notifications';
 import { ShareSimulationPopover } from '@/components/ShareSimulationPopover';
@@ -49,10 +49,20 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { ChevronDown, ChevronRight, ArrowRight, Undo2, Plus, X, Share2, BookOpen, FlaskConical, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronLeft, Undo2, Plus, X, Share2, BookOpen, FlaskConical, AlertTriangle, Clock, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const VIEW_PERIOD = 'month' as const;
+
+/** Display step label, fixing "NaN%" from bad stored data (e.g. old templates). */
+function formatStepLabel(step: SimulationStep): string {
+  if (!step.label.includes('NaN')) return step.label;
+  if (step.type === 'add_allocation' && step.allocation?.ftePercent != null && Number.isFinite(step.allocation.ftePercent))
+    return step.label.replace('NaN%', `${step.allocation.ftePercent}%`);
+  if (step.type === 'update_allocation_capacity' && step.ftePercent != null && Number.isFinite(step.ftePercent))
+    return step.label.replace('NaN%', `${step.ftePercent}%`);
+  return step.label.replace(/NaN%?/g, '—%');
+}
 
 function loadBarClass(fte: number): string {
   if (fte > 100) return 'bg-red-500/90';
@@ -120,12 +130,14 @@ function BandwidthTablePanel({
   baseData = null,
   delta,
   isSimulated = false,
+  noChangesMessage,
 }: {
   data: AppData;
   title: string;
   baseData?: AppData | null;
   delta?: ReturnType<typeof computeSimulationDelta> | null;
   isSimulated?: boolean;
+  noChangesMessage?: string;
 }) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const members = useMemo(() => buildMembersList(data), [data]);
@@ -161,6 +173,11 @@ function BandwidthTablePanel({
         <h3 className="text-sm font-semibold text-foreground/90">{title}</h3>
       </div>
       <CardContent className="p-0 flex-1 overflow-auto">
+        {noChangesMessage && (
+          <div className="px-4 py-3 text-sm text-muted-foreground/80 border-b border-border/40 bg-muted/10">
+            {noChangesMessage}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -280,12 +297,17 @@ export default function Simulation() {
   const navigate = useNavigate();
   const sim = useSimulation();
   const [applyConfirmOpen, setApplyConfirmOpen] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [currentShareId, setCurrentShareId] = useState<string | null>(null);
   const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(null);
   const [simulationTab, setSimulationTab] = useState<'build' | 'templates' | 'insights'>('build');
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState('');
   const [saveTemplateDesc, setSaveTemplateDesc] = useState('');
+  const [stepThroughMode, setStepThroughMode] = useState(false);
+  const [pendingSteps, setPendingSteps] = useState<SimulationStep[]>([]);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [stepThroughKeyboardHintSeen, setStepThroughKeyboardHintSeen] = useState(false);
   const [addStepOpen, setAddStepOpen] = useState(false);
   const [addStepType, setAddStepType] = useState<string>('add_allocation');
   const [addProjectId, setAddProjectId] = useState('');
@@ -363,6 +385,13 @@ export default function Simulation() {
     [sim.baseData, sim.simulatedData, sim.delta]
   );
   const hasSteps = (sim.steps?.length ?? 0) > 0;
+  const hasNoVisibleDelta =
+    hasSteps &&
+    delta &&
+    delta.affectedMemberIds.size === 0 &&
+    delta.affectedProjectIds.size === 0 &&
+    delta.newConflicts === 0 &&
+    delta.resolvedConflicts === 0;
   const sharedSnapshot = currentShareId ? getSharedSimulation(currentShareId) : null;
   const colleagueUsers = useMemo(
     () => (sim.baseData?.users ?? []).filter((u) => u.id !== currentUser?.id).map((u) => ({ id: u.id, name: u.name })),
@@ -375,85 +404,191 @@ export default function Simulation() {
   }, [delta, sim.baseData]);
 
   const handleRunTemplate = (steps: import('@/lib/simulation').SimulationStep[], templateId?: string) => {
-    if (!sim.baseData) return;
+    if (!sim.baseData) {
+      toast.error('Simulation data is still loading. Please try again in a moment.');
+      return;
+    }
     setCurrentTemplateId(templateId ?? null);
     sim.enterSimulationWithSteps(sim.baseData, steps);
     setSimulationTab('build');
   };
 
+  const handleStartStepThrough = (steps: SimulationStep[], templateId?: string) => {
+    if (!sim.baseData) {
+      toast.error('Simulation data is still loading. Please try again in a moment.');
+      return;
+    }
+    setCurrentTemplateId(templateId ?? null);
+    sim.enterSimulationWithSteps(sim.baseData, []);
+    setStepThroughMode(true);
+    setPendingSteps(steps);
+    setCurrentStepIndex(0);
+    setSimulationTab('build');
+    try {
+      setStepThroughKeyboardHintSeen(localStorage.getItem('simulation_step_through_hint_seen') === '1');
+    } catch {
+      setStepThroughKeyboardHintSeen(false);
+    }
+  };
+
+  const applyNextStep = () => {
+    if (currentStepIndex >= pendingSteps.length || !sim.baseData) return;
+    const nextIndex = currentStepIndex + 1;
+    const appliedSlice = pendingSteps.slice(0, nextIndex);
+    sim.enterSimulationWithSteps(sim.baseData, appliedSlice);
+    setCurrentStepIndex(nextIndex);
+  };
+
+  const rewindStep = () => {
+    if (currentStepIndex <= 0 || !sim.baseData) return;
+    const prevIndex = currentStepIndex - 1;
+    const appliedSlice = prevIndex === 0 ? [] : pendingSteps.slice(0, prevIndex);
+    sim.enterSimulationWithSteps(sim.baseData, appliedSlice);
+    setCurrentStepIndex(prevIndex);
+  };
+
+  const runRemainingSteps = () => {
+    if (!sim.baseData) return;
+    sim.enterSimulationWithSteps(sim.baseData, pendingSteps);
+    setStepThroughMode(false);
+    setPendingSteps([]);
+    setCurrentStepIndex(0);
+  };
+
+  const exitStepThrough = () => {
+    if (!sim.baseData) return;
+    sim.enterSimulation(sim.baseData);
+    setStepThroughMode(false);
+    setPendingSteps([]);
+    setCurrentStepIndex(0);
+  };
+
+  // Step-through keyboard shortcuts (only when in step-through with steps) — must be after applyNextStep etc. are defined
+  useEffect(() => {
+    if (!stepThroughMode || pendingSteps.length === 0) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') {
+        if (e.shiftKey) {
+          e.preventDefault();
+          runRemainingSteps();
+        } else {
+          e.preventDefault();
+          applyNextStep();
+        }
+        try {
+          localStorage.setItem('simulation_step_through_hint_seen', '1');
+          setStepThroughKeyboardHintSeen(true);
+        } catch {}
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        rewindStep();
+        try {
+          localStorage.setItem('simulation_step_through_hint_seen', '1');
+          setStepThroughKeyboardHintSeen(true);
+        } catch {}
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        exitStepThrough();
+        return;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [stepThroughMode, pendingSteps.length, currentStepIndex, applyNextStep, rewindStep, runRemainingSteps, exitStepThrough]);
+
   const handleAddStep = () => {
-    const data = sim.simulatedData!;
-    if (addStepType === 'add_allocation' && addProjectId && addUserId) {
-      const project = data.projects.find((p) => p.id === addProjectId);
-      const user = data.users.find((u) => u.id === addUserId);
-      if (!project || !user) return;
-      const capacity = Math.min(100, Math.max(0, addCapacity));
-      const allocation: Allocation = {
-        id: genId(),
-        projectId: addProjectId,
-        userId: addUserId,
-        ftePercent: capacity,
-        agreedMonthlyHours: Math.round((173 * capacity) / 100),
-        billableHourlyRate: user.billableHourlyRate,
-      };
-      sim.addStep({
-        id: `step-${Date.now()}`,
-        type: 'add_allocation',
-        label: `Added ${user.name} to ${project.name} at ${capacity}%`,
-        allocation,
-      });
-      setAddUserId('');
-      setAddProjectId('');
-      setAddCapacity(100);
-      setAddStepOpen(false);
-    } else if (addStepType === 'remove_allocation' && removeAllocId) {
-      const alloc = data.allocations.find((a) => a.id === removeAllocId);
-      if (!alloc) return;
-      const user = data.users.find((u) => u.id === alloc.userId);
-      const project = data.projects.find((p) => p.id === alloc.projectId);
-      sim.addStep({
-        id: `step-${Date.now()}`,
-        type: 'remove_allocation',
-        label: `Removed ${user?.name ?? 'member'} from ${project?.name ?? 'project'}`,
-        allocationId: alloc.id,
-        projectId: alloc.projectId,
-        userId: alloc.userId,
-      });
-      setRemoveAllocId('');
-      setAddStepOpen(false);
-    } else if (addStepType === 'update_allocation_capacity' && updateAllocId) {
-      const alloc = data.allocations.find((a) => a.id === updateAllocId);
-      if (!alloc) return;
-      const cap = Math.min(100, Math.max(0, updateCapacity));
-      const user = data.users.find((u) => u.id === alloc.userId);
-      const project = data.projects.find((p) => p.id === alloc.projectId);
-      sim.addStep({
-        id: `step-${Date.now()}`,
-        type: 'update_allocation_capacity',
-        label: `Set ${user?.name ?? 'member'} capacity on ${project?.name ?? 'project'} to ${cap}%`,
-        allocationId: alloc.id,
-        ftePercent: cap,
-      });
-      setUpdateAllocId('');
-      setUpdateCapacity(50);
-      setAddStepOpen(false);
-    } else if (addStepType === 'reassign_task' && reassignTaskId && reassignFrom && reassignTo && reassignFrom !== reassignTo) {
-      const task = data.tasks.find((t) => t.id === reassignTaskId);
-      if (!task || !(task.assigneeIds ?? []).includes(reassignFrom)) return;
-      const fromUser = data.users.find((u) => u.id === reassignFrom);
-      const toUser = data.users.find((u) => u.id === reassignTo);
-      sim.addStep({
-        id: `step-${Date.now()}`,
-        type: 'reassign_task',
-        label: `Reassigned "${task.title}" from ${fromUser?.name} to ${toUser?.name}`,
-        taskId: task.id,
-        fromUserId: reassignFrom,
-        toUserId: reassignTo,
-      });
-      setReassignTaskId('');
-      setReassignFrom('');
-      setReassignTo('');
-      setAddStepOpen(false);
+    try {
+      if (!sim.simulatedData) {
+        toast.error('Simulation data not ready. Try again in a moment.');
+        return;
+      }
+      const data = sim.simulatedData;
+      const projects = data.projects ?? [];
+      const users = data.users ?? [];
+      const allocations = data.allocations ?? [];
+      const tasks = data.tasks ?? [];
+
+      if (addStepType === 'add_allocation' && addProjectId && addUserId) {
+        const project = projects.find((p) => p.id === addProjectId);
+        const user = users.find((u) => u.id === addUserId);
+        if (!project || !user) return;
+        const capacity = Math.min(100, Math.max(0, addCapacity));
+        const allocation: Allocation = {
+          id: genId(),
+          projectId: addProjectId,
+          userId: addUserId,
+          ftePercent: capacity,
+          agreedMonthlyHours: Math.round((173 * capacity) / 100),
+          billableHourlyRate: user.billableHourlyRate,
+        };
+        sim.addStep({
+          id: `step-${Date.now()}`,
+          type: 'add_allocation',
+          label: `Added ${user.name} to ${project.name} at ${capacity}%`,
+          allocation,
+        });
+        setAddUserId('');
+        setAddProjectId('');
+        setAddCapacity(100);
+        setAddStepOpen(false);
+      } else if (addStepType === 'remove_allocation' && removeAllocId) {
+        const alloc = allocations.find((a) => a.id === removeAllocId);
+        if (!alloc) return;
+        const user = users.find((u) => u.id === alloc.userId);
+        const project = projects.find((p) => p.id === alloc.projectId);
+        sim.addStep({
+          id: `step-${Date.now()}`,
+          type: 'remove_allocation',
+          label: `Removed ${user?.name ?? 'member'} from ${project?.name ?? 'project'}`,
+          allocationId: alloc.id,
+          projectId: alloc.projectId,
+          userId: alloc.userId,
+        });
+        setRemoveAllocId('');
+        setAddStepOpen(false);
+      } else if (addStepType === 'update_allocation_capacity' && updateAllocId) {
+        const alloc = allocations.find((a) => a.id === updateAllocId);
+        if (!alloc) return;
+        const cap = Math.min(100, Math.max(0, updateCapacity));
+        const user = users.find((u) => u.id === alloc.userId);
+        const project = projects.find((p) => p.id === alloc.projectId);
+        sim.addStep({
+          id: `step-${Date.now()}`,
+          type: 'update_allocation_capacity',
+          label: `Set ${user?.name ?? 'member'} capacity on ${project?.name ?? 'project'} to ${cap}%`,
+          allocationId: alloc.id,
+          ftePercent: cap,
+        });
+        setUpdateAllocId('');
+        setUpdateCapacity(50);
+        setAddStepOpen(false);
+      } else if (addStepType === 'reassign_task' && reassignTaskId && reassignFrom && reassignTo && reassignFrom !== reassignTo) {
+        const task = tasks.find((t) => t.id === reassignTaskId);
+        if (!task || !(task.assigneeIds ?? []).includes(reassignFrom)) return;
+        const fromUser = users.find((u) => u.id === reassignFrom);
+        const toUser = users.find((u) => u.id === reassignTo);
+        sim.addStep({
+          id: `step-${Date.now()}`,
+          type: 'reassign_task',
+          label: `Reassigned "${task.title}" from ${fromUser?.name} to ${toUser?.name}`,
+          taskId: task.id,
+          fromUserId: reassignFrom,
+          toUserId: reassignTo,
+        });
+        setReassignTaskId('');
+        setReassignFrom('');
+        setReassignTo('');
+        setAddStepOpen(false);
+      } else {
+        toast.error('Select the required options above (e.g. project and member) before adding the step.');
+      }
+    } catch (err) {
+      console.error('Add step error:', err);
+      toast.error(err instanceof Error ? err.message : 'Something went wrong adding the step. Try again.');
     }
   };
 
@@ -517,29 +652,53 @@ export default function Simulation() {
     navigate('/bandwidth');
   };
 
-  const handleDiscard = () => {
-    if (sim.steps.length > 0) {
-      const sessionMinutes = sessionStartRef.current ? (Date.now() - sessionStartRef.current) / 60000 : undefined;
-      recordSimulationRun({
-        steps: sim.steps,
-        applied: false,
-        templateId: currentTemplateId ?? undefined,
-        sessionDurationMinutes: sessionMinutes,
-        wasShared: !!currentShareId,
-      });
-      const delta = sim.delta ?? (sim.baseData && sim.simulatedData ? computeSimulationDelta(sim.baseData, sim.simulatedData) : null);
-      saveSimulationSnapshot({
-        steps: sim.steps,
-        summary: delta
-          ? `Would have: ${delta.newConflicts} new conflict(s), ${delta.resolvedConflicts} resolved, ${delta.affectedMemberIds.size} members`
-          : `${sim.steps.length} step(s) (discarded)`,
-        applied: false,
-      });
-    }
+  const performDiscard = useCallback(() => {
+    const steps = sim.steps;
+    const hadSteps = steps.length > 0;
+    const baseData = sim.baseData;
+    const simulatedData = sim.simulatedData;
+    const templateId = currentTemplateId;
+    const shareId = currentShareId;
+    setShowDiscardConfirm(false);
     setCurrentTemplateId(null);
     sim.discard();
-    navigate(-1);
-  };
+    if (hadSteps) {
+      try {
+        const sessionMinutes = sessionStartRef.current ? (Date.now() - sessionStartRef.current) / 60000 : undefined;
+        recordSimulationRun({
+          steps,
+          applied: false,
+          templateId: templateId ?? undefined,
+          sessionDurationMinutes: sessionMinutes,
+          wasShared: !!shareId,
+        });
+        const delta = baseData && simulatedData ? computeSimulationDelta(baseData, simulatedData) : null;
+        saveSimulationSnapshot({
+          steps,
+          summary: delta
+            ? `Would have: ${delta.newConflicts} new conflict(s), ${delta.resolvedConflicts} resolved, ${delta.affectedMemberIds.size} members`
+            : `${steps.length} step(s) (discarded)`,
+          applied: false,
+        });
+      } catch (_) {
+        // Recording failed; simulation already exited
+      }
+    }
+    try {
+      navigate('/bandwidth', { replace: true });
+    } catch (_) {
+      window.location.href = '/bandwidth';
+    }
+  }, [sim, currentTemplateId, currentShareId, navigate]);
+
+  const handleDiscard = useCallback(() => {
+    if (sim.steps.length === 0) {
+      performDiscard();
+      return;
+    }
+    setShowDiscardConfirm(true);
+  }, [sim.steps.length, performDiscard]);
+
 
   if (!isManagerOrAbove) {
     return (
@@ -585,6 +744,7 @@ export default function Simulation() {
           {hasSteps && currentUser && (
             <>
             <Button
+              type="button"
               variant="outline"
               size="sm"
               className="rounded-full bg-background/80 backdrop-blur border-white/10"
@@ -603,25 +763,62 @@ export default function Simulation() {
               colleagueUsers={colleagueUsers}
               onShared={setCurrentShareId}
             >
-              <Button variant="outline" size="sm" className="rounded-full bg-background/80 backdrop-blur border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10">
+              <Button type="button" variant="outline" size="sm" className="rounded-full bg-background/80 backdrop-blur border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10">
                 <Share2 className="h-4 w-4 mr-1" />
                 Share simulation
               </Button>
             </ShareSimulationPopover>
             </>
           )}
-          <Button variant="outline" size="sm" onClick={handleDiscard}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleDiscard();
+            }}
+            aria-label="Discard simulation and go to Bandwidth"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
             <X className="h-4 w-4 mr-1" />
             Discard Simulation
-          </Button>
+          </button>
           </div>
         </div>
+
+        {/* Discard confirmation modal — always on top so it can't be missed */}
+        <AlertDialog open={showDiscardConfirm} onOpenChange={setShowDiscardConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Discard simulation?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Discard {sim.steps.length} simulation step{sim.steps.length !== 1 ? 's' : ''}? This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel type="button">Keep editing</AlertDialogCancel>
+              <AlertDialogAction
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowDiscardConfirm(false);
+                  performDiscard();
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Discard
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <TabsContent value="templates" className="mt-4">
           <div className="rounded-xl bg-background/60 backdrop-blur border border-white/10 p-4">
             <SimulationTemplatesPanel
               data={sim.baseData}
               onRunWithSteps={handleRunTemplate}
+              onStepThrough={handleStartStepThrough}
               onClose={() => setSimulationTab('build')}
             />
           </div>
@@ -666,46 +863,99 @@ export default function Simulation() {
       )}
 
       {/* Delta summary */}
-      {hasSteps && (
+      {(hasSteps || stepThroughMode) && (
         <div className="rounded-xl bg-muted/30 backdrop-blur-sm border border-white/10 px-4 py-3 text-sm text-muted-foreground">
-          Simulation would introduce{' '}
-          <span className="font-medium text-foreground">{delta.newConflicts}</span> new conflict
-          {delta.newConflicts !== 1 ? 's' : ''}
-          {' · '}
-          Resolve <span className="font-medium text-foreground">{delta.resolvedConflicts}</span>{' '}
-          existing conflict{delta.resolvedConflicts !== 1 ? 's' : ''}
-          {' · '}
-          Affect <span className="font-medium text-foreground">{delta.affectedMemberIds.size}</span>{' '}
-          members across{' '}
-          <span className="font-medium text-foreground">{delta.affectedProjectIds.size}</span>{' '}
-          projects
+          {stepThroughMode && pendingSteps.length > 0 && (
+            <div className="mb-2 flex items-center gap-2">
+              <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-amber-500/60 rounded-full transition-all duration-150 ease-out"
+                  style={{ width: `${pendingSteps.length ? (currentStepIndex / pendingSteps.length) * 100 : 0}%` }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground shrink-0">
+                {currentStepIndex} of {pendingSteps.length} steps applied
+              </span>
+            </div>
+          )}
+          {stepThroughMode && currentStepIndex === 0 && pendingSteps.length > 0 ? (
+            <p className="text-muted-foreground">0 changes from current state</p>
+          ) : (
+            <>
+              Simulation would introduce{' '}
+              <span className="font-medium text-foreground">{delta?.newConflicts ?? 0}</span> new conflict
+              {(delta?.newConflicts ?? 0) !== 1 ? 's' : ''}
+              {' · '}
+              Resolve <span className="font-medium text-foreground">{delta?.resolvedConflicts ?? 0}</span>{' '}
+              existing conflict{(delta?.resolvedConflicts ?? 0) !== 1 ? 's' : ''}
+              {' · '}
+              Affect <span className="font-medium text-foreground">{delta?.affectedMemberIds.size ?? 0}</span>{' '}
+              members across{' '}
+              <span className="font-medium text-foreground">{delta?.affectedProjectIds.size ?? 0}</span>{' '}
+              projects
+            </>
+          )}
         </div>
       )}
 
-      {/* Step log */}
-      {hasSteps && (
+      {/* Step log - step-through shows applied/current/pending; normal shows all with undo */}
+      {(hasSteps || (stepThroughMode && pendingSteps.length > 0)) && (
         <div className="rounded-xl bg-amber-500/5 backdrop-blur-sm border border-amber-500/20 px-4 py-3">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
             Steps
           </p>
-          <div className="flex flex-wrap gap-2">
-            {sim.steps.map((step, i) => (
-              <div
-                key={step.id}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-background/60 border border-white/10 px-2.5 py-1.5 text-xs"
-              >
-                <span className="text-muted-foreground">Step {i + 1}:</span>
-                <span className="text-foreground/90">{step.label}</span>
-                <button
-                  type="button"
-                  className="text-amber-600 hover:text-amber-500 p-0.5"
-                  onClick={() => sim.undoStepAtIndex(i)}
-                  title="Undo this step"
-                >
-                  <Undo2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+          <div className="flex flex-col gap-1.5">
+            {stepThroughMode && pendingSteps.length > 0
+              ? pendingSteps.map((step, i) => {
+                  const isApplied = i < currentStepIndex;
+                  const isCurrent = i === currentStepIndex;
+                  const isPending = i > currentStepIndex;
+                  return (
+                    <div
+                      key={step.id}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-all duration-150',
+                        isApplied && 'bg-background/60 border border-white/10 opacity-100',
+                        isCurrent && 'bg-amber-500/10 border-l-4 border-l-amber-500/70 border border-white/10',
+                        isPending && 'opacity-40 border border-white/5 bg-muted/20'
+                      )}
+                    >
+                      {isApplied && <Check className="h-3.5 w-3.5 text-emerald-500/80 shrink-0" />}
+                      {isPending && <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                      <span className="text-muted-foreground">
+                        {isCurrent ? 'Next: ' : ''}Step {i + 1}:
+                      </span>
+                      <span className="text-foreground/90">{formatStepLabel(step)}</span>
+                      {!stepThroughMode && (
+                        <button
+                          type="button"
+                          className="text-amber-600 hover:text-amber-500 p-0.5 ml-1"
+                          onClick={() => sim.undoStepAtIndex(i)}
+                          title="Undo this step"
+                        >
+                          <Undo2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              : sim.steps.map((step, i) => (
+                  <div
+                    key={step.id}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-background/60 border border-white/10 px-2.5 py-1.5 text-xs"
+                  >
+                    <span className="text-muted-foreground">Step {i + 1}:</span>
+                    <span className="text-foreground/90">{formatStepLabel(step)}</span>
+                    <button
+                      type="button"
+                      className="text-amber-600 hover:text-amber-500 p-0.5"
+                      onClick={() => sim.undoStepAtIndex(i)}
+                      title="Undo this step"
+                    >
+                      <Undo2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
           </div>
         </div>
       )}
@@ -847,10 +1097,18 @@ export default function Simulation() {
             </Select>
           </>
         )}
-        <Button size="sm" onClick={handleAddStep}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleAddStep();
+          }}
+          className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
           <Plus className="h-4 w-4 mr-1" />
           Add step
-        </Button>
+        </button>
       </div>
 
       {/* Two panels */}
@@ -862,27 +1120,160 @@ export default function Simulation() {
           />
         </div>
         <div className="min-h-[320px]">
+          {stepThroughMode && currentStepIndex === 0 && pendingSteps.length > 0 && (
+            <div className="mb-2 rounded-lg border border-white/10 bg-muted/20 px-4 py-2 text-sm text-muted-foreground">
+              No steps applied yet — use the controls below to step through
+            </div>
+          )}
           <BandwidthTablePanel
+            key={stepThroughMode ? `sim-${currentStepIndex}` : `sim-${sim.steps.length}`}
             data={sim.simulatedData}
             title="Simulated State"
             baseData={sim.baseData}
             delta={sim.delta}
             isSimulated
+            noChangesMessage={
+              hasNoVisibleDelta && !stepThroughMode
+                ? 'This template produced no changes from the current state — the template may need reconfiguring'
+                : undefined
+            }
           />
         </div>
       </div>
 
-      {/* Apply / Discard */}
-      <div className="flex items-center gap-3 pt-4 border-t border-border/40">
+      {/* Step-through empty state */}
+      {stepThroughMode && pendingSteps.length === 0 && (
+        <div className="rounded-xl bg-muted/30 backdrop-blur-sm border border-white/10 px-4 py-6 text-center">
+          <p className="text-sm text-muted-foreground mb-3">This template has no steps configured</p>
+          <Button type="button" variant="outline" size="sm" onClick={exitStepThrough}>
+            Close
+          </Button>
+        </div>
+      )}
+
+      {/* Step-through step description (last applied step) */}
+      {stepThroughMode && pendingSteps.length > 0 && currentStepIndex > 0 && (
+        <div className="rounded-xl border border-white/10 bg-background/60 backdrop-blur-sm px-4 py-3 text-sm animate-in fade-in duration-150">
+          <p className="font-medium text-foreground/90">
+            Step {currentStepIndex} of {pendingSteps.length} — {pendingSteps[currentStepIndex - 1]?.label}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Applied in this step: see Simulated State panel for changes
+          </p>
+        </div>
+      )}
+
+      {/* Step-through control bar */}
+      {stepThroughMode && pendingSteps.length > 0 && (
+        <div
+          className="rounded-xl border border-white/12 bg-background/80 backdrop-blur-[16px] px-4 py-3 flex items-center justify-between gap-4 flex-wrap"
+          role="region"
+          aria-label="Step-through controls"
+        >
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                rewindStep();
+              }}
+              disabled={currentStepIndex === 0}
+              className="gap-1"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <span className="text-xs text-muted-foreground px-2">
+              Step {currentStepIndex + 1} of {pendingSteps.length}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                applyNextStep();
+              }}
+              disabled={currentStepIndex >= pendingSteps.length}
+              className="gap-1"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            {currentStepIndex >= pendingSteps.length ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  runRemainingSteps();
+                }}
+              >
+                Done — keep result
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  runRemainingSteps();
+                }}
+              >
+                Run remaining
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                exitStepThrough();
+              }}
+            >
+              Exit step-through
+            </Button>
+          </div>
+          {!stepThroughKeyboardHintSeen && (
+            <p className="text-[10px] text-muted-foreground w-full mt-1">
+              Tip: use ← → arrow keys to step through
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Apply / Discard - relative z-10 so buttons stay clickable above scroll content */}
+      <div className="flex items-center gap-3 pt-4 border-t border-border/40 relative z-10 bg-background/95">
         <Button
-          onClick={() => setApplyConfirmOpen(true)}
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setApplyConfirmOpen(true); }}
           disabled={!hasSteps}
         >
           Apply All Changes
         </Button>
-        <Button variant="outline" onClick={handleDiscard}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleDiscard();
+          }}
+          aria-label="Discard simulation and go to Bandwidth"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
           Discard Simulation
-        </Button>
+        </button>
       </div>
         </TabsContent>
       </Tabs>
@@ -912,8 +1303,9 @@ export default function Simulation() {
               />
             </div>
             <div className="flex gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setSaveTemplateOpen(false)}>Cancel</Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => setSaveTemplateOpen(false)}>Cancel</Button>
               <Button
+                type="button"
                 size="sm"
                 onClick={() => {
                   if (!currentUser || !saveTemplateName.trim()) return;

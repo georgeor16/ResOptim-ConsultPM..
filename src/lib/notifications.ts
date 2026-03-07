@@ -6,6 +6,13 @@ export type NotificationCategory = 'task' | 'reassignment' | 'bandwidth' | 'proj
 export type NotificationScope = 'personal' | 'team' | 'org' | 'client';
 export type NotificationPriority = 'critical' | 'attention' | 'info';
 
+/** Section in notification center: Organisation (org-level) vs Your Team (team/personal). */
+export type NotificationCenterSection = 'organisation' | 'team';
+
+export function getNotificationSection(scope?: NotificationScope): NotificationCenterSection {
+  return scope === 'org' ? 'organisation' : 'team';
+}
+
 export type NotificationType =
   | 'task_assigned'
   | 'task_unassigned'
@@ -60,6 +67,13 @@ export interface NotificationItem {
   sharedSimulationId?: string;
   createdAt: string; // ISO
   read: boolean;
+  /** External channel delivery status (email, Slack, Teams, push). */
+  deliveryStatus?: {
+    email?: { sentAt: string; failed?: boolean; recipientCount?: number };
+    slack?: { sentAt: string; failed?: boolean; channel?: string };
+    teams?: { sentAt: string; failed?: boolean };
+    push?: { sentAt: string; failed?: boolean; deviceCount?: number; deliveredCount?: number; failedCount?: number };
+  };
 }
 
 export type ActivityEventType =
@@ -93,6 +107,17 @@ export interface NotificationPreferences {
   projectChanges: boolean;
   /** Bandwidth thresholds the user wants alerts for (e.g. [75, 90, 100]). */
   bandwidthThresholds: number[];
+  /** Override email for external delivery (defaults to profile email). */
+  deliveryEmail?: string;
+  /** Opt out of batched Attention emails (Critical always sent). */
+  emailOptOutBatched?: boolean;
+  /** Quiet hours: no Attention/Info emails in this window (HH:mm). */
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
+  /** Opt out of Slack DM alerts. */
+  slackDmOptOut?: boolean;
+  /** Master toggle: when false, all external delivery (email, Slack, Teams, push) is paused; in-app continues. Default true. */
+  quickAlertsEnabled?: boolean;
 }
 
 const NOTIF_KEY_PREFIX = 'notif:user:';
@@ -196,6 +221,7 @@ export function loadNotificationPreferences(userId: string): NotificationPrefere
     bandwidth: true,
     projectChanges: true,
     bandwidthThresholds: [75, 100],
+    quickAlertsEnabled: true,
   };
   const prefs = loadJson<NotificationPreferences>(key, fallback);
   return {
@@ -204,6 +230,7 @@ export function loadNotificationPreferences(userId: string): NotificationPrefere
     bandwidthThresholds: Array.isArray(prefs.bandwidthThresholds) && prefs.bandwidthThresholds.length
       ? prefs.bandwidthThresholds
       : fallback.bandwidthThresholds,
+    quickAlertsEnabled: prefs.quickAlertsEnabled !== false,
   };
 }
 

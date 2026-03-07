@@ -1,8 +1,48 @@
 import type { AppData, Project, User } from './types';
 import { addNotification, type NotificationItem, type NotificationPriority } from './notifications';
+import { deliverExternalChannelsIfConfigured } from './externalNotifications';
 import { loadOrgNotificationPreferences, getOrgAdmins, getTeamManagers } from './orgNotificationPrefs';
 import { getConcurrencyWarnings, getMemberProjectFtePercent, getMemberTotalPeakFte, type ViewPeriod } from './bandwidth';
 import { getActiveFlags } from './planningInsights';
+
+/** Which user IDs should receive this org notification (admins + affected managers/members). */
+function getRecipientsForOrgNotification(n: NotificationItem, data: AppData, orgId: string): string[] {
+  const users = data.users ?? [];
+  const admins = getOrgAdmins(users, orgId).map(u => u.id);
+  const affectedTeamIds = n.affectedTeamIds ?? [];
+  const teamManagers = getTeamManagers(users, affectedTeamIds.length ? affectedTeamIds : (data.teams ?? []).map(t => t.id)).map(u => u.id);
+  const relatedUserId = n.relatedUserId;
+
+  switch (n.type) {
+    case 'org_capacity_crunch':
+      return [...new Set([...admins, ...teamManagers])];
+    case 'org_cross_team_conflict':
+      return [...new Set([...admins, ...teamManagers, ...(relatedUserId ? [relatedUserId] : [])])];
+    case 'org_sharing_opportunity':
+    case 'org_digest':
+      return admins;
+    case 'org_health_decline':
+      return [...new Set([...admins, ...teamManagers])];
+    case 'org_kickoff_risk':
+      return [...new Set([...admins, ...teamManagers])];
+    default:
+      return admins;
+  }
+}
+
+function addOrgNotificationToRecipients(n: NotificationItem, data: AppData, orgId: string): void {
+  const recipients = getRecipientsForOrgNotification(n, data, orgId);
+  const admins = getOrgAdmins(data.users ?? [], orgId).map(u => u.id);
+  let deliveredExternal = false;
+  for (const userId of recipients) {
+    const copy = { ...n, userId };
+    addNotification(copy);
+    if (!deliveredExternal && admins.includes(userId)) {
+      deliverExternalChannelsIfConfigured(copy, orgId, data.users ?? []);
+      deliveredExternal = true;
+    }
+  }
+}
 
 const STATE_KEY = 'orgnotif:lastFired';
 const DIGEST_KEY = 'orgnotif:lastDigestAt';
@@ -98,7 +138,7 @@ export function runOrganisationNotificationChecks(data: AppData): void {
 
     // Digest + escalation are also org-admin scoped
     maybeEmitOrgDigest(data, { orgId, admin, cadence: prefs.digestCadence });
-    maybeEscalateUnackedCriticals(admin.id, prefs.escalationWindowHours);
+    maybeEscalateUnackedCriticals(admin.id, prefs.escalationWindowHours, data, orgId);
   }
 }
 
@@ -155,7 +195,7 @@ function detectMultiTeamCrunch(
         teamId: tid,
         overMembers: membersOverByTeam.get(tid)?.size ?? 0,
       }));
-      addNotification(buildBase({
+      const n = buildBase({
         userId: args.admin.id,
         type: 'org_capacity_crunch',
         category: 'org',
@@ -166,7 +206,8 @@ function detectMultiTeamCrunch(
         affectedTeamIds: affectedTeams,
         title: `${nTeams} teams approaching full capacity`,
         message: `${nTeams} teams are approaching full capacity simultaneously during ${slotLabel} — organisation-wide crunch risk detected. ${perTeam.map(x => `${teamName(data, x.teamId)}: ${x.overMembers}`).join(' · ')}`,
-      }));
+      });
+      addOrgNotificationToRecipients(n, data, args.orgId);
     });
   }
 }
@@ -200,7 +241,7 @@ function detectSharedMemberConflicts(
       }
 
       // Admin gets full alert
-      addNotification(buildBase({
+      const adminN = buildBase({
         userId: args.admin.id,
         type: 'org_cross_team_conflict',
         category: 'org',
@@ -213,12 +254,14 @@ function detectSharedMemberConflicts(
         groupId,
         title: `${u.name} overallocated across teams`,
         message: `${u.name} is overallocated across ${involvedTeams.length} teams — total FTE: ${Math.round(totalFte)}%. Breakdown: ${involvedTeams.map(tid => `${teamName(data, tid)} ${Math.round(byTeam.get(tid) ?? 0)}%`).join(' · ')}.`,
-      }));
+      });
+      addNotification(adminN);
+      deliverExternalChannelsIfConfigured(adminN, args.orgId, data.users ?? []);
+      addNotification({ ...adminN, userId: u.id }); // member sees they are the one overallocated
 
-      // Managers get scoped transparency notification
       const mgrs = managers.filter(m => m.teamId && involvedTeams.includes(m.teamId));
       for (const m of mgrs) {
-        addNotification(buildBase({
+        const mn = buildBase({
           userId: m.id,
           type: 'org_cross_team_conflict',
           category: 'org',
@@ -231,7 +274,8 @@ function detectSharedMemberConflicts(
           title: `Cross-team bandwidth impact`,
           message: `${u.name}'s bandwidth has been affected by a cross-team commitment — their availability on your work may be reduced. An organisation-level alert is active.`,
           alsoSentToManagersCount: mgrs.length,
-        }));
+        });
+        addNotification(mn);
       }
     });
   }
@@ -266,7 +310,7 @@ function detectSharingOpportunities(
         const key = `share:${orgId}:${role.id}:${ta}:${tb}:${args.periodStart}`;
         fireOnce(key, () => {
           const availMembers = byTeam.get(tb)?.available ?? [];
-          addNotification(buildBase({
+          const n = buildBase({
             userId: args.admin.id,
             type: 'org_sharing_opportunity',
             category: 'org',
@@ -276,7 +320,8 @@ function detectSharingOpportunities(
             affectedTeamIds: [ta, tb],
             title: `Cross-team sharing opportunity`,
             message: `${teamName(data, ta)} is overallocated on ${role.name} · ${teamName(data, tb)} has capacity available. Candidates: ${availMembers.slice(0, 3).map(u => u.name).join(', ')}${availMembers.length > 3 ? '…' : ''}.`,
-          }));
+          });
+          addOrgNotificationToRecipients(n, data, orgId);
         });
       }
     }
@@ -308,7 +353,7 @@ function detectHealthDegradation(data: AppData, args: { orgId: string; admin: Us
   }
   state[key] = level;
   saveState(state);
-  addNotification(buildBase({
+  const n = buildBase({
     userId: args.admin.id,
     type: 'org_health_decline',
     category: 'org',
@@ -318,7 +363,8 @@ function detectHealthDegradation(data: AppData, args: { orgId: string; admin: Us
     orgId: args.orgId,
     title: `Organisation scheduling health declined`,
     message: `Organisation scheduling health has declined — ${flags.length} active planning flags. Teams most affected can be reviewed in Insights.`,
-  }));
+  });
+  addOrgNotificationToRecipients(n, data, args.orgId);
 }
 
 function detectKickoffRisk(data: AppData, args: { orgId: string; admin: User }) {
@@ -341,7 +387,7 @@ function detectKickoffRisk(data: AppData, args: { orgId: string; admin: User }) 
   if (nProjects < 2 || nTeams < 2) return;
   const key = `kickoff:${args.orgId}:${dateStr(now)}:${nProjects}:${nTeams}`;
   fireOnce(key, () => {
-    addNotification(buildBase({
+    const n = buildBase({
       userId: args.admin.id,
       type: 'org_kickoff_risk',
       category: 'org',
@@ -351,7 +397,8 @@ function detectKickoffRisk(data: AppData, args: { orgId: string; admin: User }) 
       affectedTeamIds: teams,
       title: `${nProjects} new projects starting`,
       message: `${nProjects} new projects are starting across ${nTeams} teams this week — combined bandwidth impact may exceed organisation capacity.`,
-    }));
+    });
+    addOrgNotificationToRecipients(n, data, args.orgId);
   });
 }
 
@@ -364,7 +411,7 @@ function maybeEmitOrgDigest(data: AppData, args: { orgId: string; admin: User; c
   if (last && Date.now() - last < interval) return;
 
   localStorage.setItem(key, nowIso());
-  addNotification(buildBase({
+  const n = buildBase({
     userId: args.admin.id,
     type: 'org_digest',
     category: 'digest',
@@ -373,10 +420,11 @@ function maybeEmitOrgDigest(data: AppData, args: { orgId: string; admin: User; c
     orgId: args.orgId,
     title: `Organisation alert digest`,
     message: `Summary of organisation-level alerts since the last digest. Open Insights → Monthly Digest for full details.`,
-  }));
+  });
+  addOrgNotificationToRecipients(n, data, args.orgId);
 }
 
-function maybeEscalateUnackedCriticals(adminUserId: string, windowHours: number) {
+function maybeEscalateUnackedCriticals(adminUserId: string, windowHours: number, data: AppData, orgId: string) {
   // lightweight: track last escalation time per admin; emit one reminder if any unacked critical exists.
   const escKey = `${ESCALATION_KEY}:${adminUserId}`;
   const lastEsc = localStorage.getItem(escKey);
@@ -391,7 +439,7 @@ function maybeEscalateUnackedCriticals(adminUserId: string, windowHours: number)
   const needs = unacked.some(n => shouldEscalate(n.createdAt, windowHours));
   if (!needs) return;
   localStorage.setItem(escKey, nowIso());
-  addNotification(buildBase({
+  const n = buildBase({
     userId: adminUserId,
     type: 'org_health_decline',
     category: 'org',
@@ -400,6 +448,7 @@ function maybeEscalateUnackedCriticals(adminUserId: string, windowHours: number)
     requiresAck: true,
     title: `Unacknowledged critical alert`,
     message: `One or more critical organisation alerts remain unacknowledged — teams may still be at risk.`,
-  }));
+  });
+  addOrgNotificationToRecipients(n, data, orgId);
 }
 
