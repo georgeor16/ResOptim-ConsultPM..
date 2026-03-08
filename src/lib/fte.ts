@@ -123,9 +123,10 @@ export function getBandwidthTooltip(totalFtePercent: number): string {
       return 'Approaching full capacity';
     case 'full':
       return 'At full capacity — no remaining bandwidth';
-    case 'overallocated':
+    case 'overallocated': {
       const over = Math.round(totalFtePercent - 100);
       return `Overallocated — exceeds available bandwidth by ${over}%`;
+    }
     default:
       return '';
   }

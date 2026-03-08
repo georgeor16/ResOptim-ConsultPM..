@@ -626,13 +626,6 @@ function CapacityTrendsSection({
   teams: DerivedTeam[];
 }) {
   const [focusedTeamIds, setFocusedTeamIds] = useState<Set<string> | null>(null);
-
-  if (!trend) {
-    return null;
-  }
-  const { months, summaries, peakMonthKey, peakTeamFte } = trend;
-  const peakLabel = peakMonthKey ? getMonthLabel(peakMonthKey) : null;
-  const teamSummaries = scope === 'org' ? computeTeamCapacitySummaries(trend, teams) : [];
   const chartData = useMemo(() => buildTeamSeries(data, teams, window), [data, teams, window]);
 
   const handleToggleTeam = useCallback((teamId: string) => {
@@ -647,6 +640,13 @@ function CapacityTrendsSection({
 
   const handleSelectAll = useCallback(() => setFocusedTeamIds(null), []);
   const handleDeselectAll = useCallback(() => setFocusedTeamIds(new Set()), []);
+
+  if (!trend) {
+    return null;
+  }
+  const { months, summaries, peakMonthKey, peakTeamFte } = trend;
+  const peakLabel = peakMonthKey ? getMonthLabel(peakMonthKey) : null;
+  const teamSummaries = scope === 'org' ? computeTeamCapacitySummaries(trend, teams) : [];
 
   return (
     <>

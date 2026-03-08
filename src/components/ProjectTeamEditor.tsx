@@ -176,6 +176,8 @@ export default function ProjectTeamEditor({
   initialData,
   onNavigateToProject,
 }: ProjectTeamEditorProps) {
+  const navigate = useNavigate();
+  const simulation = useSimulationOptional();
   const [data, setData] = useState<AppData | null>(initialData ?? null);
   const [addUserId, setAddUserId] = useState('');
   const [addCapacity, setAddCapacity] = useState(100);
@@ -387,9 +389,6 @@ export default function ProjectTeamEditor({
       </Dialog>
     );
   }
-
-  const navigate = useNavigate();
-  const simulation = useSimulationOptional();
 
   const handleSimulate = () => {
     if (!data) return;

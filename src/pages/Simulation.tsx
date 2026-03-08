@@ -478,7 +478,7 @@ export default function Simulation() {
         try {
           localStorage.setItem('simulation_step_through_hint_seen', '1');
           setStepThroughKeyboardHintSeen(true);
-        } catch {}
+        } catch { /* localStorage may be unavailable */ }
         return;
       }
       if (e.key === 'ArrowLeft') {
@@ -487,7 +487,7 @@ export default function Simulation() {
         try {
           localStorage.setItem('simulation_step_through_hint_seen', '1');
           setStepThroughKeyboardHintSeen(true);
-        } catch {}
+        } catch { /* localStorage may be unavailable */ }
         return;
       }
       if (e.key === 'Escape') {
