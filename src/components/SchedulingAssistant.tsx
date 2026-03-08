@@ -55,6 +55,72 @@ function buildUnscheduled(data: AppData): UnscheduledTaskRow[] {
     .filter((x): x is UnscheduledTaskRow => !!x);
 }
 
+function TaskDateRow({ row, onApply }: { row: UnscheduledTaskRow; onApply: (task: Task, start: string, end: string) => void }) {
+  const t = row.task;
+  const [localStart, setLocalStart] = useState(t.startDate || '');
+  const [localEnd, setLocalEnd] = useState(t.dueDate || '');
+  const assignees = row.users;
+  const hours = getTaskDurationHours(t);
+  const fte = hours > 0 && localStart && localEnd ? computeTaskFtePercent(hours, localStart, localEnd) : 0;
+  return (
+    <div className="rounded-md bg-background/60 border border-white/5 px-2 py-1.5 flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-xs font-medium text-foreground truncate" title={t.title}>
+            {t.title}
+          </span>
+          <Badge variant="outline" className="text-[10px] bg-muted/40 border-muted/60 text-muted-foreground">
+            {reasonLabel(row.reason)}
+          </Badge>
+        </div>
+        {assignees.length > 0 && (
+          <div className="flex -space-x-1">
+            {assignees.map(u => (
+              <div
+                key={u.id}
+                className="h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold border border-background"
+                style={{ backgroundColor: u.avatarColor, color: 'white' }}
+                title={u.name}
+              >
+                {u.name.split(' ').map(n => n[0]).join('')}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <span>Start</span>
+        <Input
+          type="date"
+          value={localStart}
+          onChange={e => setLocalStart(e.target.value)}
+          className="h-7 w-32 bg-background/60 border-white/10"
+        />
+        <span>End</span>
+        <Input
+          type="date"
+          value={localEnd}
+          onChange={e => setLocalEnd(e.target.value)}
+          className="h-7 w-32 bg-background/60 border-white/10"
+        />
+        <Button
+          size="xs"
+          className="ml-auto h-7 px-2 text-[11px] bg-accent text-accent-foreground hover:bg-accent/90"
+          disabled={!localStart || !localEnd}
+          onClick={() => onApply(t, localStart, localEnd)}
+        >
+          Apply
+        </Button>
+      </div>
+      {hours > 0 && localStart && localEnd && (
+        <p className="text-[10px] text-muted-foreground/80">
+          This will add approximately {fte}% FTE for assigned members over this period.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function useUnscheduledCount() {
   const [count, setCount] = useState(0);
 
@@ -186,7 +252,7 @@ function SchedulingAssistantList({ data, rows, onChanged }: ListProps) {
 
   const handleSetPhaseDates = async (phase: Phase, startDate: string, endDate: string) => {
     if (!startDate || !endDate) return;
-    await updateItem('phases', { ...phase, startDate, endDate } as any);
+    await updateItem('phases', { ...phase, startDate, endDate });
     await onChanged();
   };
 
@@ -199,7 +265,7 @@ function SchedulingAssistantList({ data, rows, onChanged }: ListProps) {
       <div className="flex items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground/80">Filter by project:</span>
-          <Select value={projectFilter} onValueChange={v => setProjectFilter(v as any)}>
+          <Select value={projectFilter} onValueChange={v => setProjectFilter(v)}>
             <SelectTrigger className="h-7 w-[160px] bg-background/60 border-white/10">
               <SelectValue placeholder="All projects" />
             </SelectTrigger>
@@ -260,74 +326,9 @@ function SchedulingAssistantList({ data, rows, onChanged }: ListProps) {
                       )}
                     </div>
                     <div className="space-y-1.5">
-                      {phaseGroup.tasks.map(row => {
-                        const t = row.task;
-                        const [localStart, setLocalStart] = useState(t.startDate || '');
-                        const [localEnd, setLocalEnd] = useState(t.dueDate || '');
-                        const assignees = row.users;
-                        const hours = getTaskDurationHours(t);
-                        const fte = hours > 0 && localStart && localEnd ? computeTaskFtePercent(hours, localStart, localEnd) : 0;
-                        return (
-                          <div
-                            key={t.id}
-                            className="rounded-md bg-background/60 border border-white/5 px-2 py-1.5 flex flex-col gap-1"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="text-xs font-medium text-foreground truncate" title={t.title}>
-                                  {t.title}
-                                </span>
-                                <Badge variant="outline" className="text-[10px] bg-muted/40 border-muted/60 text-muted-foreground">
-                                  {reasonLabel(row.reason)}
-                                </Badge>
-                              </div>
-                              {assignees.length > 0 && (
-                                <div className="flex -space-x-1">
-                                  {assignees.map(u => (
-                                    <div
-                                      key={u.id}
-                                      className="h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-bold border border-background"
-                                      style={{ backgroundColor: u.avatarColor, color: 'white' }}
-                                      title={u.name}
-                                    >
-                                      {u.name.split(' ').map(n => n[0]).join('')}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                              <span>Start</span>
-                              <Input
-                                type="date"
-                                value={localStart}
-                                onChange={e => setLocalStart(e.target.value)}
-                                className="h-7 w-32 bg-background/60 border-white/10"
-                              />
-                              <span>End</span>
-                              <Input
-                                type="date"
-                                value={localEnd}
-                                onChange={e => setLocalEnd(e.target.value)}
-                                className="h-7 w-32 bg-background/60 border-white/10"
-                              />
-                              <Button
-                                size="xs"
-                                className="ml-auto h-7 px-2 text-[11px] bg-accent text-accent-foreground hover:bg-accent/90"
-                                disabled={!localStart || !localEnd}
-                                onClick={() => handleApplyTaskDates(t, localStart, localEnd)}
-                              >
-                                Apply
-                              </Button>
-                            </div>
-                            {hours > 0 && localStart && localEnd && (
-                              <p className="text-[10px] text-muted-foreground/80">
-                                This will add approximately {fte}% FTE for assigned members over this period.
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
+                      {phaseGroup.tasks.map(row => (
+                        <TaskDateRow key={row.task.id} row={row} onApply={handleApplyTaskDates} />
+                      ))}
                     </div>
                   </div>
                 );

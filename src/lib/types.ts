@@ -120,6 +120,8 @@ export interface Phase {
   plannedDurationWeeks?: number;
   plannedEffortHours?: number;
   plannedFtePercent?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface Task {

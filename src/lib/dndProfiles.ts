@@ -194,7 +194,7 @@ export function computeDndEndsAt(profile: DndProfile, now: Date = new Date()): s
     const fromM = (fh ?? 0) * 60 + (fm ?? 0);
     const toM = (th ?? 0) * 60 + (tm ?? 0);
     const nowM = now.getHours() * 60 + now.getMinutes();
-    let end = new Date(now);
+    const end = new Date(now);
     if (fromM <= toM) {
       if (nowM >= fromM && nowM < toM) end.setHours(th ?? 0, tm ?? 0, 0, 0);
       else { end.setDate(end.getDate() + 1); end.setHours(th ?? 0, tm ?? 0, 0, 0); }

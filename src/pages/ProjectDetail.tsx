@@ -266,7 +266,7 @@ function DraggableTaskRow(props: {
         </button>
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); canToggle && onCompletionToggle(task); }}
+          onClick={(e) => { e.stopPropagation(); if (canToggle) onCompletionToggle(task); }}
           disabled={!canToggle}
           className={cn(
             'h-6 w-6 shrink-0 rounded-md border border-white/20 bg-background/50 backdrop-blur-sm flex items-center justify-center transition-opacity',
