@@ -331,7 +331,7 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Google Calendar, Google Drive, Slack webhook, and export integrations coming soon. Connect Lovable Cloud to enable these features.
+                Google Calendar, Google Drive, Slack webhook, and export integrations coming soon.
               </p>
             </CardContent>
           </Card>
