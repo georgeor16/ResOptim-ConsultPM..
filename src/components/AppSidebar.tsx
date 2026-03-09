@@ -1,4 +1,4 @@
-import { LayoutDashboard, FolderKanban, Users, CalendarRange, Settings, ChevronDown, ChevronRight, LogOut, Gauge, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Users, CalendarRange, Settings, ChevronDown, ChevronRight, LogOut, Gauge, BarChart3, FlaskConical } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -27,11 +27,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 const navItems = [
   { title: 'Dashboard', url: '/', icon: LayoutDashboard },
   { title: 'Projects', url: '/projects', icon: FolderKanban },
-  { title: 'Resources', url: '/resources', icon: CalendarRange, roles: ['admin', 'manager'] as const },
-  { title: 'Bandwidth', url: '/bandwidth', icon: Gauge, roles: ['admin', 'manager'] as const },
-  { title: 'Insights', url: '/insights', icon: BarChart3, roles: ['admin', 'manager'] as const },
-  { title: 'Team', url: '/team', icon: Users, roles: ['admin', 'manager'] as const },
-  { title: 'Settings', url: '/settings', icon: Settings, roles: ['admin'] as const },
+  { title: 'Resources', url: '/resources', icon: CalendarRange },
+  { title: 'Bandwidth', url: '/bandwidth', icon: Gauge },
+  { title: 'Insights', url: '/insights', icon: BarChart3 },
+  { title: 'Simulation', url: '/simulation', icon: FlaskConical },
+  { title: 'Team', url: '/team', icon: Users },
 ];
 
 /** Tooltip styling for collapsed sidebar — glassmorphism, right-aligned, no arrow, 120ms fade-in */

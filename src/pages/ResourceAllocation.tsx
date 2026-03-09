@@ -57,22 +57,22 @@ function getRemainingYearMonths(existingMonths: MonthInfo[]): MonthInfo[] {
   for (let m = now.getMonth(); m < 12; m++) {
     const key = `${year}-${m}`;
     if (existingKeys.has(key)) continue;
-    // Generate weeks for this month
     const firstDay = new Date(year, m, 1);
     const startMon = new Date(firstDay);
-    startMon.setDate(firstDay.getDate() - ((firstDay.getDay() + 6) % 7)); // Monday of first week
+    startMon.setDate(firstDay.getDate() - ((firstDay.getDay() + 6) % 7));
     const monthWeeks: WeekInfo[] = [];
     const d = new Date(startMon);
-    while (d.getMonth() <= m || (d.getMonth() === 0 && m === 11)) {
+    // Use a fixed upper bound of 10 iterations (no month spans more than 6 weeks)
+    for (let iter = 0; iter < 10; iter++) {
       const ws = new Date(d);
       const we = new Date(d);
       we.setDate(we.getDate() + 6);
-      // Only include if week overlaps with this month
+      // Stop once the week has fully passed our target month+year
+      if (ws.getFullYear() > year || (ws.getFullYear() === year && ws.getMonth() > m)) break;
       if (ws.getMonth() === m || we.getMonth() === m) {
         monthWeeks.push({ label: `${ws.getDate()}/${ws.getMonth() + 1}`, start: ws, end: we });
       }
       d.setDate(d.getDate() + 7);
-      if (ws.getMonth() > m && we.getMonth() > m) break;
     }
     remaining.push({
       label: `${MONTH_NAMES[m]} ${year}`,
@@ -111,6 +111,37 @@ export default function ResourceAllocation() {
   const months = useMemo(() => getMonths(weeks), [weeks]);
   const remainingMonths = useMemo(() => getRemainingYearMonths(months), [months]);
 
+  // Pre-compute all week FTEs once so render is just map lookups
+  const weekFteMap = useMemo(() => {
+    if (!data) return new Map<string, number>();
+    const map = new Map<string, number>();
+    for (const user of data.users) {
+      for (let i = 0; i < weeks.length; i++) {
+        const w = weeks[i];
+        const start = format(w.start, 'yyyy-MM-dd');
+        const end = format(w.end, 'yyyy-MM-dd');
+        map.set(`${user.id}-${i}`, getMemberTotalPeakFte(data, user, 'week', start, end));
+      }
+    }
+    return map;
+  }, [data, weeks]);
+
+  const weekBreakdownMap = useMemo(() => {
+    if (!data) return new Map<string, { project: string; ftePercent: number }[]>();
+    const map = new Map<string, { project: string; ftePercent: number }[]>();
+    for (const user of data.users) {
+      for (let i = 0; i < displayWeeks.length; i++) {
+        const w = displayWeeks[i];
+        const start = format(w.start, 'yyyy-MM-dd');
+        const end = format(w.end, 'yyyy-MM-dd');
+        map.set(`${user.id}-${i}`, activeProjects
+          .map(p => ({ project: p.name, ftePercent: getMemberProjectFtePercent(data, user, p.id, 'week', start, end) }))
+          .filter(b => b.ftePercent > 0));
+      }
+    }
+    return map;
+  }, [data, displayWeeks, activeProjects]);
+
   if (!isManagerOrAbove) {
     return <div className="text-center py-12 text-muted-foreground">Access restricted</div>;
   }
@@ -120,33 +151,18 @@ export default function ResourceAllocation() {
     );
   }
 
-  const weekToBounds = (week: WeekInfo) => ({
-    start: format(week.start, 'yyyy-MM-dd'),
-    end: format(week.end, 'yyyy-MM-dd'),
-  });
+  const getUserWeekFTE = (userId: string, weekIndex: number) =>
+    weekFteMap.get(`${userId}-${weekIndex}`) ?? 0;
 
-  const getUserWeekFTE = (userId: string, week: WeekInfo) => {
-    const user = data.users.find(u => u.id === userId);
-    if (!user) return 0;
-    const { start, end } = weekToBounds(week);
-    return getMemberTotalPeakFte(data, user, 'week', start, end);
-  };
-
-  const getBreakdown = (userId: string, week: WeekInfo) => {
-    const user = data.users.find(u => u.id === userId);
-    if (!user) return [];
-    const { start, end } = weekToBounds(week);
-    return activeProjects
-      .map(p => ({
-        project: p.name,
-        ftePercent: getMemberProjectFtePercent(data, user, p.id, 'week', start, end),
-      }))
-      .filter(b => b.ftePercent > 0);
-  };
+  const getBreakdown = (userId: string, weekIndex: number) =>
+    weekBreakdownMap.get(`${userId}-${weekIndex}`) ?? [];
 
   const getUserMonthFTE = (userId: string, month: MonthInfo) => {
     if (month.weeks.length === 0) return 0;
-    const total = month.weeks.reduce((sum, w) => sum + getUserWeekFTE(userId, w), 0);
+    const total = month.weeks.reduce((sum, w) => {
+      const idx = weeks.indexOf(w);
+      return sum + (idx >= 0 ? getUserWeekFTE(userId, idx) : 0);
+    }, 0);
     return total / month.weeks.length;
   };
 
@@ -173,8 +189,10 @@ export default function ResourceAllocation() {
     });
   };
 
-  const relevantWeeks = viewMode === 'week' ? displayWeeks : weeks;
-  const hasOverallocation = data.users.some(u => relevantWeeks.some(w => getUserWeekFTE(u.id, w) > 100));
+  const relevantWeekIndices = viewMode === 'week'
+    ? displayWeeks.map((_, i) => i)
+    : weeks.map((_, i) => i);
+  const hasOverallocation = data.users.some(u => relevantWeekIndices.some(i => getUserWeekFTE(u.id, i) > 100));
 
   const renderMonthGrid = (monthList: MonthInfo[], keyPrefix: string) => (
     <table className="w-full text-sm">
@@ -215,10 +233,11 @@ export default function ResourceAllocation() {
                     <CollapsibleContent>
                       <div className="mt-2 space-y-1">
                         {m.weeks.map((w, wi) => {
-                          const wfte = getUserWeekFTE(user.id, w);
+                          const idx = weeks.indexOf(w);
+                          const wfte = idx >= 0 ? getUserWeekFTE(user.id, idx) : 0;
                           return (
                             <div key={wi} className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${fteColor(wfte)}`}>
-                              W{w.label}: {wfte}%
+                              W{w.label}: {Math.round(wfte)}%
                             </div>
                           );
                         })}
@@ -273,8 +292,8 @@ export default function ResourceAllocation() {
                       <UserCell user={user} />
                     </td>
                     {displayWeeks.map((w, i) => {
-                      const fte = getUserWeekFTE(user.id, w);
-                      const breakdown = getBreakdown(user.id, w);
+                      const fte = getUserWeekFTE(user.id, i);
+                      const breakdown = getBreakdown(user.id, i);
                       return (
                         <td key={i} className="p-2 text-center">
                           <div
@@ -318,8 +337,8 @@ export default function ResourceAllocation() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            {data.users.filter(u => relevantWeeks.some(w => getUserWeekFTE(u.id, w) > 100)).map(user => {
-              const overWeeks = relevantWeeks.filter(w => getUserWeekFTE(user.id, w) > 100);
+            {data.users.filter(u => relevantWeekIndices.some(i => getUserWeekFTE(u.id, i) > 100)).map(user => {
+              const overWeeks = relevantWeekIndices.filter(i => getUserWeekFTE(user.id, i) > 100);
               return (
                 <p key={user.id} className="text-sm text-muted-foreground">
                   <span className="font-medium text-foreground">{user.name}</span> is over 100% FTE in {overWeeks.length} week(s)

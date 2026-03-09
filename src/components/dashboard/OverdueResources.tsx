@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, Clock } from 'lucide-react';
@@ -9,9 +10,10 @@ interface Props {
 }
 
 export default function OverdueResources({ data }: Props) {
+  const navigate = useNavigate();
   const overdueItems = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    const results: { type: 'task'; projectName: string; title: string; dueDate: string; assignees: string[] }[] = [];
+    const results: { type: 'task'; projectId: string; projectName: string; title: string; dueDate: string; assignees: string[] }[] = [];
 
     for (const task of data.tasks) {
       if (task.status === 'Done') continue;
@@ -22,6 +24,7 @@ export default function OverdueResources({ data }: Props) {
           .filter(Boolean) as string[];
         results.push({
           type: 'task',
+          projectId: project?.id || '',
           projectName: project?.name || 'Unknown',
           title: task.title,
           dueDate: task.dueDate,
@@ -40,6 +43,7 @@ export default function OverdueResources({ data }: Props) {
           .filter(Boolean) as string[];
         results.push({
           type: 'task',
+          projectId: project?.id || '',
           projectName: project?.name || 'Unknown',
           title: subtask.title,
           dueDate: subtask.dueDate,
@@ -84,7 +88,11 @@ export default function OverdueResources({ data }: Props) {
         </div>
         <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
           {overdueItems.map((item, i) => (
-            <div key={i} className="flex items-start justify-between gap-2 p-2 rounded-md bg-muted/50">
+            <div
+              key={i}
+              className="flex items-start justify-between gap-2 p-2 rounded-md bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
+              onClick={() => item.projectId && navigate(`/projects/${item.projectId}`)}
+            >
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-foreground truncate">{item.title}</p>
                 <p className="text-xs text-muted-foreground">{item.projectName}</p>

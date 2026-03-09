@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSimulation } from '@/contexts/SimulationContext';
@@ -49,7 +49,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { ChevronDown, ChevronRight, ChevronLeft, Undo2, Plus, X, Share2, BookOpen, FlaskConical, AlertTriangle, Clock, Check } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronRight, ChevronLeft, Undo2, Plus, X, Share2, BookOpen, FlaskConical, AlertTriangle, Clock, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const VIEW_PERIOD = 'month' as const;
@@ -197,88 +197,161 @@ function BandwidthTablePanel({
                 const showDelta =
                   isSimulated && baseRow && (baseRow.totalFte !== totalFte || baseRow.remaining !== remaining);
                 const isAffected = affectedSet.has(user.id);
+                const baseProjectMap = new Map(
+                  (baseRow?.projectAllocs ?? []).map((p) => [p.projectId, p])
+                );
                 return (
-                  <tr
-                    key={user.id}
-                    className={cn(
-                      'border-b border-border/40',
-                      status === 'overallocated' && 'bg-red-500/5',
-                      isAffected && isSimulated && 'bg-amber-500/5'
-                    )}
-                  >
-                    <td className="py-1.5 px-2">
-                      <button
-                        type="button"
-                        className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
-                        onClick={() => toggleExpanded(user.id)}
-                        disabled={projectAllocs.length === 0}
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4" />
-                        )}
-                      </button>
-                    </td>
-                    <td className="py-1.5 px-3">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                          style={{
-                            backgroundColor: user.avatarColor,
-                            color: 'white',
-                          }}
+                  <React.Fragment key={user.id}>
+                    <tr
+                      className={cn(
+                        'border-b border-border/40',
+                        status === 'overallocated' && 'bg-red-500/5',
+                        isAffected && isSimulated && 'bg-amber-500/5'
+                      )}
+                    >
+                      <td className="py-1.5 px-2">
+                        <button
+                          type="button"
+                          className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
+                          onClick={() => toggleExpanded(user.id)}
+                          disabled={projectAllocs.length === 0}
                         >
-                          {user.name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .join('')}
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </button>
+                      </td>
+                      <td className="py-1.5 px-3">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                            style={{
+                              backgroundColor: user.avatarColor,
+                              color: 'white',
+                            }}
+                          >
+                            {user.name
+                              .split(' ')
+                              .map((n) => n[0])
+                              .join('')}
+                          </div>
+                          <span className="font-medium text-foreground/95 text-xs">{user.name}</span>
                         </div>
-                        <span className="font-medium text-foreground/95 text-xs">{user.name}</span>
-                      </div>
-                    </td>
-                    <td className="py-1.5 px-3 text-muted-foreground capitalize text-xs">
-                      {user.role}
-                    </td>
-                    <td className="py-1.5 px-3 text-right">
-                      {showDelta ? (
-                        <span className="text-xs">
-                          <span className="text-muted-foreground line-through">
-                            {Math.round(baseRow!.totalFte)}%
+                      </td>
+                      <td className="py-1.5 px-3 text-muted-foreground capitalize text-xs">
+                        {user.role}
+                      </td>
+                      <td className="py-1.5 px-3 text-right">
+                        {showDelta ? (
+                          <span className="text-xs">
+                            <span className="text-muted-foreground line-through">
+                              {Math.round(baseRow!.totalFte)}%
+                            </span>
+                            <span className="text-amber-600 dark:text-amber-400 mx-1">
+                              <ArrowRight className="inline h-3 w-3" />
+                            </span>
+                            <span className="font-medium">{Math.round(totalFte)}%</span>
                           </span>
-                          <span className="text-amber-600 dark:text-amber-400 mx-1">
-                            <ArrowRight className="inline h-3 w-3" />
+                        ) : (
+                          <span className="font-medium text-xs">{Math.round(totalFte)}%</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-3 text-right text-muted-foreground text-xs">
+                        {showDelta ? (
+                          <span>
+                            <span className="line-through">{Math.round(baseRow!.remaining)}%</span>
+                            <span className="text-amber-600 dark:text-amber-400 mx-1">
+                              <ArrowRight className="inline h-3 w-3" />
+                            </span>
+                            <span className={cn(remaining < 25 && 'text-red-500', remaining >= 25 && remaining < 50 && 'text-amber-600')}>
+                              {Math.round(remaining)}%
+                            </span>
                           </span>
-                          <span className="font-medium">{Math.round(totalFte)}%</span>
-                        </span>
-                      ) : (
-                        <span className="font-medium text-xs">{Math.round(totalFte)}%</span>
-                      )}
-                    </td>
-                    <td className="py-1.5 px-3 text-right text-muted-foreground text-xs">
-                      {showDelta ? (
-                        <span>
-                          <span className="line-through">{Math.round(baseRow!.remaining)}%</span>
-                          <span className="text-amber-600 dark:text-amber-400 mx-1">
-                            <ArrowRight className="inline h-3 w-3" />
-                          </span>
-                          <span className={cn(remaining < 25 && 'text-red-500', remaining >= 25 && remaining < 50 && 'text-amber-600')}>
-                            {Math.round(remaining)}%
-                          </span>
-                        </span>
-                      ) : (
-                        <span>{Math.round(remaining)}%</span>
-                      )}
-                    </td>
-                    <td className="py-1.5 px-3 min-w-[100px]">
-                      <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
-                        <div
-                          className={cn('h-full rounded-full transition-all', loadBarClass(totalFte))}
-                          style={{ width: `${Math.min(100, totalFte)}%` }}
-                        />
-                      </div>
-                    </td>
-                  </tr>
+                        ) : (
+                          <span>{Math.round(remaining)}%</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-3 min-w-[100px]">
+                        <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                          <div
+                            className={cn('h-full rounded-full transition-all', loadBarClass(totalFte))}
+                            style={{ width: `${Math.min(100, totalFte)}%` }}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                    {isExpanded && projectAllocs.map((proj) => {
+                      const baseProj = baseProjectMap.get(proj.projectId);
+                      const fteChanged = isSimulated && baseProj && baseProj.ftePercent !== proj.ftePercent;
+                      const isNew = isSimulated && !baseProj;
+                      const isRemoved = false; // removed allocs won't appear in current projectAllocs
+                      return (
+                        <tr
+                          key={proj.projectId}
+                          className={cn(
+                            'border-b border-border/30 bg-muted/20',
+                            proj.overCapacity && 'bg-red-500/5',
+                            isNew && 'bg-emerald-500/5'
+                          )}
+                        >
+                          <td />
+                          <td colSpan={2} className="py-1 pl-10 pr-3">
+                            <div className="flex items-center gap-1.5">
+                              {isNew && (
+                                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">New</span>
+                              )}
+                              <span className="text-xs text-foreground/80 truncate">{proj.projectName}</span>
+                            </div>
+                          </td>
+                          <td className="py-1 px-3 text-right text-xs">
+                            {fteChanged ? (
+                              <span>
+                                <span className="text-muted-foreground line-through">{Math.round(baseProj!.ftePercent)}%</span>
+                                <span className="text-amber-600 dark:text-amber-400 mx-1">
+                                  <ArrowRight className="inline h-3 w-3" />
+                                </span>
+                                <span className={cn('font-medium', proj.overCapacity && 'text-red-500')}>{Math.round(proj.ftePercent)}%</span>
+                              </span>
+                            ) : (
+                              <span className={cn('font-medium', proj.overCapacity && 'text-red-500')}>{Math.round(proj.ftePercent)}%</span>
+                            )}
+                          </td>
+                          <td className="py-1 px-3 text-right text-xs text-muted-foreground">
+                            {proj.capacity}%
+                          </td>
+                          <td className="py-1 px-3 min-w-[100px]">
+                            <div className="h-1 rounded-full bg-muted/50 overflow-hidden">
+                              <div
+                                className={cn('h-full rounded-full', loadBarClass(proj.ftePercent))}
+                                style={{ width: `${Math.min(100, proj.ftePercent)}%` }}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {isExpanded && isSimulated && (() => {
+                      const removedProjs = (baseRow?.projectAllocs ?? []).filter(
+                        (bp) => !projectAllocs.some((p) => p.projectId === bp.projectId)
+                      );
+                      return removedProjs.map((proj) => (
+                        <tr key={`removed-${proj.projectId}`} className="border-b border-border/30 bg-red-500/5">
+                          <td />
+                          <td colSpan={2} className="py-1 pl-10 pr-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-semibold text-red-500 uppercase tracking-wide">Removed</span>
+                              <span className="text-xs text-foreground/60 line-through truncate">{proj.projectName}</span>
+                            </div>
+                          </td>
+                          <td className="py-1 px-3 text-right text-xs text-muted-foreground line-through">{Math.round(proj.ftePercent)}%</td>
+                          <td className="py-1 px-3 text-right text-xs text-muted-foreground line-through">{proj.capacity}%</td>
+                          <td />
+                        </tr>
+                      ));
+                    })()}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -320,6 +393,8 @@ export default function Simulation() {
   const [reassignFrom, setReassignFrom] = useState('');
   const [reassignTo, setReassignTo] = useState('');
   const sessionStartRef = useRef<number | null>(null);
+  const simRef = useRef(sim);
+  simRef.current = sim;
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const navState = location.state as { appData?: AppData; steps?: import('@/lib/simulation').SimulationStep[] } | null;
@@ -332,19 +407,20 @@ export default function Simulation() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (sim.baseData) return;
+    if (simRef.current.baseData) return;
     if (stateData && stateData.users && stateData.projects) {
       if (stateSteps && stateSteps.length > 0) {
-        sim.enterSimulationWithSteps(stateData, stateSteps);
+        simRef.current.enterSimulationWithSteps(stateData, stateSteps);
       } else {
-        sim.enterSimulation(stateData);
+        simRef.current.enterSimulation(stateData);
       }
       return;
     }
     loadData().then((data) => {
-      sim.enterSimulation(data);
+      simRef.current.enterSimulation(data);
     });
-  }, [stateData, stateSteps, sim]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stateData, stateSteps]);
 
   useEffect(() => {
     if (sim.baseData && sim.isSimulationMode) {
@@ -355,11 +431,8 @@ export default function Simulation() {
   }, [sim.baseData, sim.isSimulationMode]);
 
   // Clear simulation mode when leaving the page so the banner disappears
-  useEffect(() => {
-    return () => {
-      sim.exitSimulation();
-    };
-  }, [sim]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => simRef.current.exitSimulation(), []);
 
   const activeProjects = useMemo(
     () => (sim.baseData?.projects.filter((p) => p.status === 'Active') ?? []),

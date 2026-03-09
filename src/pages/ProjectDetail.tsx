@@ -195,6 +195,7 @@ function DraggableTaskRow(props: {
     task,
     assignees,
     overCapacityUserIds,
+    externallyAffectedUserIds,
     taskLogs,
     taskHours,
     taskFte,
