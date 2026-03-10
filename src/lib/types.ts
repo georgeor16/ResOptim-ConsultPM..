@@ -105,7 +105,8 @@ export interface Allocation {
   id: string;
   projectId: string;
   userId: string;
-  ftePercent: number; // 0-100
+  ftePercent: number; // 0-100 — derived: projectSharePercent × projectFteDemand / 100
+  projectSharePercent?: number; // 0-100 — % of the project's total work this person owns
   agreedMonthlyHours: number;
   billableHourlyRate: number;
   contributionMode?: AllocationContributionMode;
@@ -123,6 +124,8 @@ export interface Phase {
   startDate?: string;
   endDate?: string;
 }
+
+export type ClientInvolvement = 'input' | 'approval' | 'review';
 
 export interface Task {
   id: string;
@@ -142,6 +145,8 @@ export interface Task {
   startDate: string;
   dueDate: string;
   order: number;
+  /** Optional: type of client involvement required for this task. */
+  clientInvolvement?: ClientInvolvement;
 }
 
 export interface SubTask {

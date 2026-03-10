@@ -51,13 +51,25 @@ async function loadFromSupabase(): Promise<AppData> {
     }
     (result[key] as unknown[]) = (data || []).map(row => rowToApp(row));
   }
-  // Supabase currently only stores core tables. Keep org/team metadata in localStorage and merge it in.
+  // Merge metadata and any core-table items that failed to sync to Supabase from localStorage.
   try {
     const local = loadFromLocalSync();
     result.organisations = Array.isArray(local.organisations) ? local.organisations : [];
     result.teams = Array.isArray(local.teams) ? local.teams : [];
     result.roles = Array.isArray(local.roles) ? local.roles : [];
     result.skills = Array.isArray(local.skills) ? local.skills : [];
+
+    // For each core table, merge in any localStorage rows not present in Supabase
+    // (can happen when a Supabase insert failed due to a schema mismatch on a new column).
+    for (const key of TABLE_KEYS) {
+      const supabaseIds = new Set((result[key] as { id: string }[]).map(r => r.id));
+      const localRows = (local[key] as { id: string }[] | undefined) ?? [];
+      for (const row of localRows) {
+        if (!supabaseIds.has(row.id)) {
+          (result[key] as { id: string }[]).push(row);
+        }
+      }
+    }
   } catch {
     // ignore
   }
@@ -144,18 +156,25 @@ function getTable(key: keyof AppData): string {
   return key === 'subtasks' ? 'subtasks' : key;
 }
 
-/** Add one row. Uses Supabase if configured, else localStorage. */
+/** Add one row. Uses Supabase if configured, else localStorage.
+ * Always writes to localStorage as a reliable fallback mirror so that items
+ * which fail to sync to Supabase are never silently lost. */
 export async function addItem<T extends { id: string }>(key: keyof AppData, item: T): Promise<void> {
+  // Always persist to localStorage first so the item is never lost.
+  const localData = loadFromLocalSync();
+  const arr = localData[key] as unknown as T[];
+  if (!arr.some(x => x.id === item.id)) {
+    arr.push(item);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
+  }
+
   if (supabase) {
     const row = appToRow(item as unknown as Record<string, unknown>);
     const { error } = await supabase.from(getTable(key)).insert(row);
-    if (!error) return;
-    // Fallback to local storage when Supabase schema is missing new columns or other non-fatal issues.
-    console.error(`Supabase add ${key} failed, falling back to local storage:`, error);
+    if (error) {
+      console.error(`Supabase add ${key} failed, item retained in localStorage:`, error);
+    }
   }
-  const data = loadFromLocalSync();
-  (data[key] as unknown as T[]).push(item);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
 /** Update one row by id. */

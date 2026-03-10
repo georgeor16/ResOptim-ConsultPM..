@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSimulationOptional } from '@/contexts/SimulationContext';
 import { genId, loadData, saveData, updateItem } from '@/lib/store';
 import type { AppData, SkillTaxonomy, User } from '@/lib/types';
-import { getBandwidthStatus } from '@/lib/fte';
+import { getBandwidthStatus, computeProjectFteFromPhases } from '@/lib/fte';
 import {
   getMemberTotalPeakFte,
   getMemberProjectFtePercent,
@@ -197,8 +197,41 @@ export default function BandwidthOverview() {
 
   const membersWithBreakdown = useMemo(() => {
     if (!data) return [];
+    // Pre-compute FTE demand per active project from phases
+    const WEEKS_PER_MONTH = 52 / 12;
+    const projectFteDemandMap = new Map<string, number>();
+    for (const project of activeProjects) {
+      const phases = (data.phases ?? []).filter(ph => ph.projectId === project.id);
+      if (phases.length > 0) {
+        projectFteDemandMap.set(
+          project.id,
+          computeProjectFteFromPhases(
+            phases.map(ph => ({
+              durationMonths: (ph.plannedDurationWeeks ?? 0) / WEEKS_PER_MONTH,
+              ftePercent: ph.plannedFtePercent ?? 0,
+            }))
+          )
+        );
+      }
+    }
+
+    /** Resolved FTE contribution of an allocation to the person's bandwidth */
+    const resolveAllocFte = (a: { projectId: string; projectSharePercent?: number; ftePercent: number }) => {
+      if (a.projectSharePercent != null) {
+        const demand = projectFteDemandMap.get(a.projectId) ?? 0;
+        return Math.round((a.projectSharePercent * demand) / 100);
+      }
+      return a.ftePercent || 0;
+    };
+
     return data.users.map(user => {
-      const totalFte = getMemberTotalPeakFte(data, user, viewPeriod, periodBounds.start, periodBounds.end);
+      const taskFte = getMemberTotalPeakFte(data, user, viewPeriod, periodBounds.start, periodBounds.end);
+      // Allocation-based FTE: sum of each person's project-share contribution across active projects
+      const allocFte = (data.allocations ?? [])
+        .filter(a => a.userId === user.id && activeProjects.some(p => p.id === a.projectId))
+        .reduce((sum, a) => sum + resolveAllocFte(a), 0);
+      // Use the higher of task-based (actual hours) and allocation-based (planned ownership)
+      const totalFte = Math.max(taskFte, allocFte);
       const remaining = Math.max(0, 100 - totalFte);
       const status = getBandwidthStatus(totalFte);
       const projectIds = Array.from(
@@ -210,15 +243,16 @@ export default function BandwidthOverview() {
       const projectAllocs = projectIds.map(projectId => {
         const project = data.projects.find(p => p.id === projectId);
         const alloc = data.allocations.find(a => a.projectId === projectId && a.userId === user.id);
-        const ftePercent = getMemberProjectFtePercent(data, user, projectId, viewPeriod, periodBounds.start, periodBounds.end);
-        const capacity = alloc?.ftePercent ?? 0;
-        const conflict = getCapacityConflict(ftePercent, capacity);
+        const taskFtePercent = getMemberProjectFtePercent(data, user, projectId, viewPeriod, periodBounds.start, periodBounds.end);
+        const allocatedFte = alloc ? resolveAllocFte(alloc) : 0;
+        const conflict = getCapacityConflict(taskFtePercent, allocatedFte);
         return {
           projectId,
           projectName: project?.name ?? 'Unknown',
           roleOnProject: alloc?.roleOnProject,
-          ftePercent,
-          capacity,
+          projectSharePercent: alloc?.projectSharePercent,
+          ftePercent: taskFtePercent,
+          capacity: allocatedFte,
           overCapacity: conflict.status === 'exceeds',
         };
       });
@@ -777,20 +811,24 @@ export default function BandwidthOverview() {
                           <td className="py-0" />
                           <td colSpan={7} className="py-2 px-4 pl-12">
                             <div className="rounded-lg border border-border/40 bg-background/30 divide-y divide-border/30 overflow-hidden">
-                              <div className="grid grid-cols-[1fr_80px_80px_80px] gap-2 px-3 py-2 text-xs font-medium text-muted-foreground">
+                              <div className="grid grid-cols-[1fr_70px_80px_80px_80px] gap-2 px-3 py-2 text-xs font-medium text-muted-foreground">
                                 <span>Project</span>
-                                <span className="text-right">Capacity</span>
-                                <span className="text-right">Required</span>
+                                <span className="text-right">Share</span>
+                                <span className="text-right">Allocated FTE</span>
+                                <span className="text-right">Task FTE</span>
                                 <span className="text-right" />
                               </div>
                               {projectAllocs.map(a => (
                                 <div
                                   key={a.projectId}
-                                  className="grid grid-cols-[1fr_80px_80px_80px] gap-2 px-3 py-2 text-xs items-center"
+                                  className="grid grid-cols-[1fr_70px_80px_80px_80px] gap-2 px-3 py-2 text-xs items-center"
                                 >
                                   <span className="text-foreground/90">{a.projectName}</span>
+                                  <span className="text-right text-muted-foreground">
+                                    {a.projectSharePercent != null ? `${a.projectSharePercent}%` : '—'}
+                                  </span>
                                   <span className="text-right text-muted-foreground">{a.capacity}%</span>
-                                  <span className={cn('text-right font-medium', a.overCapacity && 'text-amber-600 dark:text-amber-400')}>{a.ftePercent}%</span>
+                                  <span className={cn('text-right font-medium', a.overCapacity && 'text-amber-600 dark:text-amber-400')}>{Math.round(a.ftePercent)}%</span>
                                   <span className="text-right">
                                     {a.overCapacity && (
                                       <span className="text-[10px] text-amber-600/90 dark:text-amber-400/90">Over capacity</span>

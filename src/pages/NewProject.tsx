@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { loadData, saveData, saveDataToSupabase, genId } from '@/lib/store';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import { loadData, addItem, genId } from '@/lib/store';
 import type { AppData } from '@/lib/types';
 import type {
   ProjectCategory,
@@ -15,7 +14,7 @@ import type {
   AllocationContributionMode,
 } from '@/lib/types';
 import { SUPPORTED_CURRENCIES } from '@/lib/currency';
-import { computeProjectFteFromPhases, computeUserUtilization, deriveAllocationFteFromMode } from '@/lib/fte';
+import { computeProjectFteFromPhases, computeUserUtilization } from '@/lib/fte';
 import { getTemplateForCategory } from '@/lib/templates';
 import TemplatePreview from '@/components/TemplatePreview';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,7 +43,8 @@ type FteViewBasis = 'week' | 'month' | 'quarter' | 'halfyear' | 'year';
 
 interface TeamAllocation {
   userId: string;
-  ftePercent: number;
+  projectSharePercent: number; // % of the project's total work this person owns (user input)
+  ftePercent: number; // derived: projectSharePercent × projectFteDemand / 100
   contributionMode: AllocationContributionMode;
   agreedMonthlyHours: number;
   billableHourlyRate: number;
@@ -80,6 +80,8 @@ export default function NewProject() {
   const [allocations, setAllocations] = useState<TeamAllocation[]>([]);
   const [phaseEntries, setPhaseEntries] = useState<PhaseEntry[]>([]);
   const [fteViewBasis, setFteViewBasis] = useState<FteViewBasis>('month');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const template = getTemplateForCategory(category);
 
@@ -145,13 +147,18 @@ export default function NewProject() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate]);
 
-  // When phases change, keep allocations in sync for non-custom modes
+  // When phases change, recompute each person's ftePercent from their projectSharePercent
   useEffect(() => {
+    const phasesForCalc = phaseEntries.map(p => ({
+      durationMonths: durationToMonths(p.durationValue, p.durationUnit),
+      ftePercent: p.ftePercent,
+    }));
+    const projectFteDemand = computeProjectFteFromPhases(phasesForCalc);
     setAllocations(prev =>
-      prev.map((alloc, idx, arr) => {
-        if (!alloc.userId || alloc.contributionMode === 'custom') return alloc;
-        const updatedList = recomputeAllocationAtIndex(arr as TeamAllocation[], idx);
-        return updatedList[idx];
+      prev.map(alloc => {
+        const share = alloc.projectSharePercent ?? 0;
+        const derivedFte = Math.round((share * projectFteDemand) / 100);
+        return { ...alloc, ftePercent: derivedFte, agreedMonthlyHours: Math.round((160 * derivedFte) / 100) };
       }),
     );
   }, [phaseEntries]);
@@ -168,39 +175,13 @@ export default function NewProject() {
 
   const userUtilization = computeUserUtilization(data, 'month');
 
-  const computeProjectFte = (): number => {
-    if (phaseEntries.length === 0) return 0;
-    const phasesForProject = phaseEntries.map(p => ({
+  const projectFteDemand = computeProjectFteFromPhases(
+    phaseEntries.map(p => ({
       durationMonths: durationToMonths(p.durationValue, p.durationUnit),
       ftePercent: p.ftePercent,
-    }));
-    return computeProjectFteFromPhases(phasesForProject);
-  };
+    }))
+  );
 
-  const recomputeAllocationAtIndex = (list: TeamAllocation[], idx: number): TeamAllocation[] => {
-    const next = [...list];
-    const alloc = next[idx];
-    if (!alloc || !alloc.userId) return next;
-
-    const util = userUtilization[alloc.userId] ?? 0;
-    const projectFte = computeProjectFte();
-
-    const fte = deriveAllocationFteFromMode({
-      projectFteDemand: projectFte,
-      userUtilizationPercent: util,
-      mode: alloc.contributionMode || 'full',
-      currentFtePercent: alloc.ftePercent,
-    });
-
-    const agreedMonthlyHours = Math.round((160 * fte) / 100); // 160h ≈ full month
-
-    next[idx] = {
-      ...alloc,
-      ftePercent: fte,
-      agreedMonthlyHours,
-    };
-    return next;
-  };
 
   const addAllocation = () => {
     const unassigned = data.users.filter(u => !allocations.some(a => a.userId === u.id));
@@ -215,19 +196,17 @@ export default function NewProject() {
     });
     const user = ranked[0];
 
-    const base: TeamAllocation[] = [
+    setAllocations([
       ...allocations,
       {
         userId: user.id,
+        projectSharePercent: 0,
         ftePercent: 0,
-        contributionMode: 'full',
+        contributionMode: 'custom',
         agreedMonthlyHours: 0,
         billableHourlyRate: user.billableHourlyRate,
       },
-    ];
-
-    const updated = recomputeAllocationAtIndex(base, base.length - 1);
-    setAllocations(updated);
+    ]);
   };
 
   const updateAllocation = (idx: number, field: keyof TeamAllocation, value: string | number) => {
@@ -240,22 +219,15 @@ export default function NewProject() {
         userId: value as string,
         billableHourlyRate: user?.billableHourlyRate || 0,
       };
-      updated = recomputeAllocationAtIndex(updated, idx);
-    } else if (field === 'contributionMode') {
+    } else if (field === 'projectSharePercent') {
+      const share = Math.max(0, Math.min(100, Number(value) || 0));
+      const derivedFte = Math.round((share * projectFteDemand) / 100);
       updated[idx] = {
         ...updated[idx],
-        contributionMode: value as AllocationContributionMode,
-      };
-      updated = recomputeAllocationAtIndex(updated, idx);
-    } else if (field === 'ftePercent') {
-      // Manual FTE edit implies custom mode
-      const val = Number(value) || 0;
-      const clamped = Math.max(0, Math.min(100, val));
-      updated[idx] = {
-        ...updated[idx],
+        projectSharePercent: share,
+        ftePercent: derivedFte,
         contributionMode: 'custom',
-        ftePercent: clamped,
-        agreedMonthlyHours: Math.round((160 * clamped) / 100),
+        agreedMonthlyHours: Math.round((160 * derivedFte) / 100),
       };
     } else {
       updated[idx] = { ...updated[idx], [field]: Number(value) };
@@ -304,65 +276,69 @@ export default function NewProject() {
     if (!name || !client || !startDate || !endDate || !feeAmount) return;
     if (category === 'Other' && !categoryOtherSpec.trim()) return;
 
-    const projectId = genId();
-    const newProject: Project = {
-      id: projectId,
-      name,
-      client,
-      category,
-      ...(category === 'Other' && categoryOtherSpec.trim() ? { categoryOtherSpec: categoryOtherSpec.trim() } : {}),
-      priority,
-      status,
-      startDate: format(startDate!, 'yyyy-MM-dd'),
-      endDate: format(endDate!, 'yyyy-MM-dd'),
-      feeType,
-      monthlyFee: parseFloat(feeAmount),
-      currency: projectCurrency,
-      createdAt: format(new Date(), 'yyyy-MM-dd'),
-    };
+    setSubmitError(null);
+    setIsSubmitting(true);
+    try {
+      const projectId = genId();
+      const newProject: Project = {
+        id: projectId,
+        name,
+        client,
+        category,
+        ...(category === 'Other' && categoryOtherSpec.trim() ? { categoryOtherSpec: categoryOtherSpec.trim() } : {}),
+        priority,
+        status,
+        startDate: format(startDate!, 'yyyy-MM-dd'),
+        endDate: format(endDate!, 'yyyy-MM-dd'),
+        feeType,
+        monthlyFee: parseFloat(feeAmount),
+        currency: projectCurrency,
+        createdAt: format(new Date(), 'yyyy-MM-dd'),
+      };
 
-    const newAllocations: Allocation[] = allocations.map(a => ({
-      id: genId(),
-      projectId,
-      userId: a.userId,
-      ftePercent: a.ftePercent,
-      agreedMonthlyHours: a.agreedMonthlyHours,
-      billableHourlyRate: a.billableHourlyRate,
-    }));
-
-    const newPhases: Phase[] = phaseEntries.map((p, i) => {
-      const months = durationToMonths(p.durationValue, p.durationUnit);
-      const weeks = months * WEEKS_PER_MONTH;
-      const plannedEffortHours = weeks * HOURS_PER_WEEK * (Number(p.ftePercent) || 0) / 100;
-      return {
+      const newAllocations: Allocation[] = allocations.map(a => ({
         id: genId(),
         projectId,
-        name: p.name,
-        order: i,
-        plannedDurationWeeks: weeks,
-        plannedEffortHours,
-        plannedFtePercent: p.ftePercent,
-      };
-    });
+        userId: a.userId,
+        projectSharePercent: a.projectSharePercent,
+        ftePercent: a.ftePercent,
+        agreedMonthlyHours: a.agreedMonthlyHours,
+        billableHourlyRate: a.billableHourlyRate,
+      }));
 
-    const current = await loadData();
-    current.projects.push(newProject);
-    current.allocations.push(...newAllocations);
-    current.phases.push(...newPhases);
-    if (isSupabaseConfigured) {
-      await saveDataToSupabase(current);
-    } else {
-      saveData(current);
+      const newPhases: Phase[] = phaseEntries.map((p, i) => {
+        const months = durationToMonths(p.durationValue, p.durationUnit);
+        const weeks = months * WEEKS_PER_MONTH;
+        const plannedEffortHours = weeks * HOURS_PER_WEEK * (Number(p.ftePercent) || 0) / 100;
+        return {
+          id: genId(),
+          projectId,
+          name: p.name,
+          order: i,
+          plannedDurationWeeks: weeks,
+          plannedEffortHours,
+          plannedFtePercent: p.ftePercent,
+        };
+      });
+
+      await addItem('projects', newProject);
+      for (const alloc of newAllocations) await addItem('allocations', alloc);
+      for (const phase of newPhases) await addItem('phases', phase);
+
+      logActivityEvent({
+        userId: 'system',
+        projectId,
+        type: 'project_created',
+        message: `Project "${newProject.name}" was created`,
+      });
+
+      navigate(`/projects/${projectId}`);
+    } catch (err) {
+      console.error('Failed to create project:', err);
+      setSubmitError(err instanceof Error ? err.message : 'Failed to create project. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    logActivityEvent({
-      userId: 'system',
-      projectId,
-      type: 'project_created',
-      message: `Project "${newProject.name}" was created`,
-    });
-
-    navigate(`/projects/${projectId}`);
   };
 
   const isValid = name && client && startDate && endDate && feeAmount && (category !== 'Other' || categoryOtherSpec.trim());
@@ -638,10 +614,9 @@ export default function NewProject() {
             </p>
           ) : (
             <div className="space-y-3">
-              <div className="grid grid-cols-[1fr_150px_120px_40px] gap-3 text-xs font-medium text-muted-foreground px-1">
+              <div className="grid grid-cols-[1fr_160px_40px] gap-3 text-xs font-medium text-muted-foreground px-1">
                 <span>Member</span>
-                <span>Contribution</span>
-                <span>FTE %</span>
+                <span>% of project they own</span>
                 <span />
               </div>
               {allocations.map((alloc, idx) => {
@@ -655,10 +630,8 @@ export default function NewProject() {
                   })
                   .sort((a, b) => b._free - a._free);
 
-                const currentMode: AllocationContributionMode = alloc.contributionMode || 'full';
-
                 return (
-                  <div key={idx} className="grid grid-cols-[1fr_150px_120px_40px] gap-3 items-center">
+                  <div key={idx} className="grid grid-cols-[1fr_160px_40px] gap-3 items-center">
                     <Select value={alloc.userId} onValueChange={v => updateAllocation(idx, 'userId', v)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select member" />
@@ -671,6 +644,8 @@ export default function NewProject() {
                             .map(n => n[0])
                             .join('')
                             .toUpperCase();
+                          const util = userUtilization[u.id] ?? 0;
+                          const free = Math.max(0, 100 - util);
                           return (
                             <SelectItem key={u.id} value={u.id}>
                               <div className="flex items-center gap-2">
@@ -681,6 +656,7 @@ export default function NewProject() {
                                   {initials}
                                 </div>
                                 <span>{u.name}</span>
+                                <span className="text-xs text-muted-foreground ml-auto">({free}% free)</span>
                               </div>
                             </SelectItem>
                           );
@@ -688,31 +664,22 @@ export default function NewProject() {
                       </SelectContent>
                     </Select>
 
-                    <Select
-                      value={currentMode}
-                      onValueChange={v => updateAllocation(idx, 'contributionMode', v)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="full">Full-time</SelectItem>
-                        <SelectItem value="part">Part-time</SelectItem>
-                        <SelectItem value="custom">Custom</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    {currentMode === 'custom' ? (
+                    <div className="flex items-center gap-1">
                       <Input
                         type="number"
                         min={0}
                         max={100}
-                        value={alloc.ftePercent}
-                        onChange={e => updateAllocation(idx, 'ftePercent', e.target.value)}
+                        value={alloc.projectSharePercent === 0 ? '' : alloc.projectSharePercent}
+                        placeholder="0"
+                        onFocus={e => e.target.select()}
+                        onChange={e => updateAllocation(idx, 'projectSharePercent', e.target.value === '' ? 0 : e.target.value)}
+                        className="w-20"
                       />
-                    ) : (
-                      <div className="text-sm text-muted-foreground">{alloc.ftePercent}%</div>
-                    )}
+                      <span className="text-xs text-muted-foreground">%</span>
+                      {alloc.ftePercent > 0 && (
+                        <span className="text-[10px] text-muted-foreground/70 whitespace-nowrap">≈{alloc.ftePercent}% FTE</span>
+                      )}
+                    </div>
 
                     <Button variant="ghost" size="icon" onClick={() => removeAllocation(idx)}>
                       <X className="h-4 w-4 text-muted-foreground" />
@@ -726,11 +693,14 @@ export default function NewProject() {
       </Card>
 
       {/* Actions */}
-      <div className="flex justify-end gap-3">
-        <Button variant="outline" onClick={() => navigate('/')}>Cancel</Button>
-        <Button onClick={handleSubmit} disabled={!isValid} className="bg-accent text-accent-foreground hover:bg-accent/90">
-          Create Project
-        </Button>
+      <div className="flex flex-col items-end gap-2">
+        {submitError && <p className="text-sm text-destructive">{submitError}</p>}
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={() => navigate('/')}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={!isValid || isSubmitting} className="bg-accent text-accent-foreground hover:bg-accent/90">
+            {isSubmitting ? 'Creating…' : 'Create Project'}
+          </Button>
+        </div>
       </div>
     </div>
   );

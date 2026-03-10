@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData, updateItem, addItem, deleteItem, deleteProject, genId } from '@/lib/store';
-import type { AppData, Task, TaskStatus, TaskDurationUnit } from '@/lib/types';
+import type { AppData, Task, TaskStatus, TaskDurationUnit, ClientInvolvement } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -291,23 +291,35 @@ function DraggableTaskRow(props: {
           </SelectContent>
         </Select>
         <div className="flex-1 min-w-0 space-y-0.5" onClick={(e) => e.stopPropagation()}>
-          <Input
-            defaultValue={task.title}
-            onBlur={async (e) => {
-              const value = e.target.value.trim();
-              if (value && value !== task.title) {
-                await props.updateItem('tasks', { ...task, title: value });
-                props.setRefreshKey((k) => k + 1);
-              }
-            }}
-            onKeyDown={async (e) => {
-              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-            }}
-            className={cn(
-              'h-7 text-sm bg-background/40 border-white/10 px-2 py-1',
-              task.status === 'Done' && 'line-through text-muted-foreground'
+          <div className="flex items-center gap-1.5">
+            <Input
+              defaultValue={task.title}
+              onBlur={async (e) => {
+                const value = e.target.value.trim();
+                if (value && value !== task.title) {
+                  await props.updateItem('tasks', { ...task, title: value });
+                  props.setRefreshKey((k) => k + 1);
+                }
+              }}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              }}
+              className={cn(
+                'h-7 text-sm bg-background/40 border-white/10 px-2 py-1',
+                task.status === 'Done' && 'line-through text-muted-foreground'
+              )}
+            />
+            {task.clientInvolvement && (
+              <span className={cn(
+                'shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap',
+                task.clientInvolvement === 'input' && 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+                task.clientInvolvement === 'approval' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+                task.clientInvolvement === 'review' && 'bg-purple-500/15 text-purple-600 dark:text-purple-400',
+              )}>
+                {task.clientInvolvement === 'input' ? 'Client input' : task.clientInvolvement === 'approval' ? 'Client approval' : 'Client review'}
+              </span>
             )}
-          />
+          </div>
           {task.description && (
             <Textarea
               defaultValue={task.description}
@@ -683,6 +695,7 @@ export default function ProjectDetail() {
     estimatedHours: 8,
     startDate: '',
     dueDate: '',
+    clientInvolvement: undefined as ClientInvolvement | undefined,
   });
   const baseCurrency = getBaseCurrency();
   const [rates, setRates] = useState<FxRates>(loadFxRates());
@@ -939,6 +952,7 @@ export default function ProjectDetail() {
       startDate: newTask.startDate || project.startDate || '',
       dueDate: newTask.dueDate || project.endDate || '',
       order: phaseTasks.length,
+      ...(newTask.clientInvolvement ? { clientInvolvement: newTask.clientInvolvement } : {}),
     };
     await addItem('tasks', createdTask);
     logActivityEvent({
@@ -990,6 +1004,7 @@ export default function ProjectDetail() {
       estimatedHours: 8,
       startDate: '',
       dueDate: '',
+      clientInvolvement: undefined,
     });
     setTaskDialogOpen(false);
     setRefreshKey(k => k + 1);
@@ -1248,6 +1263,7 @@ export default function ProjectDetail() {
               projectId={project.id}
               projectCurrency={(project.currency || 'USD') as CurrencyCode}
               availableUsers={data.users.filter(u => !allocations.some(a => a.userId === u.id))}
+              phases={phases}
               onAdded={() => setRefreshKey(k => k + 1)}
             />
             <EditProjectDialog project={project} onUpdated={() => setRefreshKey(k => k + 1)} />
@@ -1404,9 +1420,7 @@ export default function ProjectDetail() {
                             </p>
                             {alloc?.roleOnProject && <p className="text-xs text-muted-foreground">{alloc.roleOnProject}</p>}
                             <p className="text-xs text-muted-foreground/80">
-                              <span>Capacity: {Math.round(capacity)}%</span>
-                              <span className="text-muted-foreground/60"> · </span>
-                              <span className={requiredClass || 'text-muted-foreground/80'}>Required: {Math.round(projectFte)}%</span>
+                              <span className={requiredClass || 'text-muted-foreground/80'}>Required: {Math.round(capacity)}%</span>
                               <span className="text-muted-foreground/60"> · </span>
                               <span className={ofTotalFteClass || 'text-muted-foreground/80'}>{Math.round(totalPeakFte)}% total FTE</span>
                             </p>
@@ -1415,23 +1429,17 @@ export default function ProjectDetail() {
                         <div className="flex items-center gap-4 text-sm">
                           <LoadPill ftePercent={totalPeakFte} showValue={true} />
                           {isManagerOrAbove && alloc && (
-                            <>
-                              <div className="text-right text-xs text-muted-foreground">
-                                <p>Logged {logged}h</p>
-                                <p>{formatMoney(alloc.billableHourlyRate, (project.currency || 'USD') as CurrencyCode)}/h</p>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-destructive hover:text-destructive"
-                                onClick={async () => {
-                                  await deleteItem('allocations', alloc.id);
-                                  setRefreshKey(k => k + 1);
-                                }}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              onClick={async () => {
+                                await deleteItem('allocations', alloc.id);
+                                setRefreshKey(k => k + 1);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
                           )}
                         </div>
                       </div>
@@ -1554,6 +1562,21 @@ export default function ProjectDetail() {
                         today={new Date()}
                       />
                     )}
+                    <div>
+                      <Label>Client involvement</Label>
+                      <Select
+                        value={newTask.clientInvolvement ?? 'none'}
+                        onValueChange={v => setNewTask(t => ({ ...t, clientInvolvement: v === 'none' ? undefined : v as ClientInvolvement }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="input">Input needed</SelectItem>
+                          <SelectItem value="approval">Approval needed</SelectItem>
+                          <SelectItem value="review">Review</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <Button
                       onClick={handleCreateTask}
                       disabled={!newTask.title}
@@ -2039,6 +2062,21 @@ export default function ProjectDetail() {
                   taskEnd={editingTask.dueDate}
                   today={new Date()}
                 />
+                <div>
+                  <Label>Client involvement</Label>
+                  <Select
+                    value={editingTask.clientInvolvement ?? 'none'}
+                    onValueChange={v => setEditingTask(t => t ? { ...t, clientInvolvement: v === 'none' ? undefined : v as ClientInvolvement } : t)}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="input">Input needed</SelectItem>
+                      <SelectItem value="approval">Approval needed</SelectItem>
+                      <SelectItem value="review">Review</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Button onClick={handleSaveEdit} className="w-full bg-accent text-accent-foreground hover:bg-accent/90">Save Changes</Button>
               </div>
             )}
