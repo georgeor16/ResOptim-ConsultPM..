@@ -184,9 +184,6 @@ function DraggableTaskRow(props: {
   onTitleBlur: (task: Task, value: string) => void;
   onDescriptionBlur: (task: Task, value: string) => void;
   onDeleteClick: (taskId: string) => void;
-  onDeleteConfirm: (taskId: string) => void;
-  onDeleteCancel: () => void;
-  inlineDeleteTaskId: string | null;
   currentUserId: string;
   updateItem: (key: 'tasks', item: Task) => Promise<void>;
   setRefreshKey: React.Dispatch<React.SetStateAction<number>>;
@@ -214,9 +211,6 @@ function DraggableTaskRow(props: {
     onTitleBlur,
     onDescriptionBlur,
     onDeleteClick,
-    onDeleteConfirm,
-    onDeleteCancel,
-    inlineDeleteTaskId,
     currentUserId,
   } = props;
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({ id: task.id });
@@ -405,17 +399,9 @@ function DraggableTaskRow(props: {
         )}
         {isManagerOrAbove && (
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            {inlineDeleteTaskId === task.id ? (
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground bg-destructive/5 rounded-full px-3 py-1">
-                <span>Delete this task? Member FTE % will update.</span>
-                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-destructive hover:text-destructive" onClick={() => onDeleteConfirm(task.id)}>Confirm</Button>
-                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onDeleteCancel}>Cancel</Button>
-              </div>
-            ) : (
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => onDeleteClick(task.id)}>
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); onDeleteClick(task.id); }}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
           </div>
         )}
       </div>
@@ -445,9 +431,7 @@ function PhaseCard(props: {
   currentUserId: string;
   handleCompletionToggle: (task: Task) => void;
   handleStatusChange: (task: Task, status: TaskStatus) => void;
-  handleDeleteTask: (taskId: string) => void;
-  inlineDeleteTaskId: string | null;
-  setInlineDeleteTaskId: (id: string | null) => void;
+  onTaskDeleteClick: (taskId: string) => void;
   selectedTaskIds: Set<string>;
   setSelectedTaskIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   onTaskRowClick: (taskId: string, event: React.MouseEvent) => void;
@@ -476,9 +460,7 @@ function PhaseCard(props: {
     currentUserId,
     handleCompletionToggle,
     handleStatusChange,
-    handleDeleteTask,
-    inlineDeleteTaskId,
-    setInlineDeleteTaskId,
+    onTaskDeleteClick,
     selectedTaskIds,
     setSelectedTaskIds,
     onTaskRowClick,
@@ -597,7 +579,7 @@ function PhaseCard(props: {
                   taskLogs={taskLogs}
                   taskHours={taskHours}
                   taskFte={taskFte}
-                  isOverdue={new Date(task.dueDate) < new Date() && task.status !== 'Done'}
+                  isOverdue={data.projects.find(p => p.id === projectId)?.status !== 'Completed' && new Date(task.dueDate) < new Date() && task.status !== 'Done'}
                   concurrencyWarnings={concurrencyWarnings}
                   noAvailabilityAssignees={noAvailabilityAssignees}
                   canToggle={canToggle}
@@ -611,10 +593,7 @@ function PhaseCard(props: {
                   onStatusChange={handleStatusChange}
                   onTitleBlur={async (t, value) => { await props.updateItem('tasks', { ...t, title: value }); setRefreshKey((k) => k + 1); }}
                   onDescriptionBlur={async (t, value) => { await props.updateItem('tasks', { ...t, description: value }); setRefreshKey((k) => k + 1); }}
-                  onDeleteClick={(id) => setInlineDeleteTaskId(id)}
-                  onDeleteConfirm={handleDeleteTask}
-                  onDeleteCancel={() => setInlineDeleteTaskId(null)}
-                  inlineDeleteTaskId={inlineDeleteTaskId}
+                  onDeleteClick={(id) => onTaskDeleteClick(id)}
                   currentUserId={currentUserId}
                   updateItem={async (key, item) => { await props.updateItem(key as 'tasks', item as Task); }}
                   setRefreshKey={setRefreshKey}
@@ -643,7 +622,7 @@ export default function ProjectDetail() {
   const [viewPeriod, setViewPeriod] = useState<BandwidthViewPeriod>('month');
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
   const [showCompletedTasks, setShowCompletedTasks] = useState(true);
-  const [inlineDeleteTaskId, setInlineDeleteTaskId] = useState<string | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [activeDragTaskId, setActiveDragTaskId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
@@ -1627,9 +1606,7 @@ export default function ProjectDetail() {
                 currentUserId={currentUser?.id || 'system'}
                 handleCompletionToggle={handleCompletionToggle}
                 handleStatusChange={handleStatusChange}
-                handleDeleteTask={handleDeleteTask}
-                inlineDeleteTaskId={inlineDeleteTaskId}
-                setInlineDeleteTaskId={setInlineDeleteTaskId}
+                onTaskDeleteClick={(id) => { const t = data.tasks.find(x => x.id === id); if (t) setTaskToDelete(t); }}
                 selectedTaskIds={selectedTaskIds}
                 setSelectedTaskIds={setSelectedTaskIds}
                 onTaskRowClick={handleTaskRowClick}
@@ -2144,6 +2121,31 @@ export default function ProjectDetail() {
         initialData={data}
         onNavigateToProject={() => setTeamEditorOpen(false)}
       />
+
+      <AlertDialog open={!!taskToDelete} onOpenChange={open => { if (!open) setTaskToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete task</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{taskToDelete?.title}&quot;? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (taskToDelete) {
+                  await handleDeleteTask(taskToDelete.id);
+                  setTaskToDelete(null);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent>

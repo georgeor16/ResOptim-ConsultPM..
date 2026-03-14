@@ -19,6 +19,7 @@ export default function OverdueResources({ data }: Props) {
       if (task.status === 'Done') continue;
       if (task.dueDate && task.dueDate < today) {
         const project = data.projects.find(p => p.id === task.projectId);
+        if (project?.status === 'Completed') continue;
         const assigneeNames = (task.assigneeIds || [])
           .map(id => data.users.find(u => u.id === id)?.name)
           .filter(Boolean) as string[];
@@ -38,6 +39,7 @@ export default function OverdueResources({ data }: Props) {
       if (subtask.dueDate && subtask.dueDate < today) {
         const parentTask = data.tasks.find(t => t.id === subtask.taskId);
         const project = parentTask ? data.projects.find(p => p.id === parentTask.projectId) : undefined;
+        if (project?.status === 'Completed') continue;
         const assigneeNames = (subtask.assigneeIds || [])
           .map(id => data.users.find(u => u.id === id)?.name)
           .filter(Boolean) as string[];

@@ -1,12 +1,12 @@
 import { useAuth } from '@/contexts/AuthContext';
-import { loadData, deleteProject } from '@/lib/store';
+import { loadData, deleteProject, updateItem } from '@/lib/store';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AppData } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus, Search, ArrowUpDown, ArrowUp, ArrowDown, Trash2, UserCog } from 'lucide-react';
+import { Plus, Search, ArrowUpDown, ArrowUp, ArrowDown, Trash2, UserCog, CheckCircle2 } from 'lucide-react';
 import ProjectTeamEditor from '@/components/ProjectTeamEditor';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -195,7 +195,7 @@ export default function Projects() {
                   <span className="flex items-center">Category<SortIcon column="category" /></span>
                 </TableHead>
                 <TableHead>Team</TableHead>
-                {isManagerOrAbove && <TableHead className="w-[100px]">Actions</TableHead>}
+                <TableHead className="w-[100px]">Actions</TableHead>
                 <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('progress')}>
                   <span className="flex items-center">Progress<SortIcon column="progress" /></span>
                 </TableHead>
@@ -244,29 +244,45 @@ export default function Projects() {
                         )}
                       </div>
                     </TableCell>
-                    {isManagerOrAbove && (
-                      <TableCell onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center gap-1">
+                    <TableCell onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1">
+                        {project.status !== 'Completed' && (
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                            title="Edit team"
-                            onClick={() => setEditTeamProjectId(project.id)}
+                            className="h-8 w-8 text-muted-foreground hover:text-status-completed"
+                            title="Mark as complete"
+                            onClick={async () => {
+                              await updateItem('projects', { ...project, status: 'Completed' });
+                              setRefreshKey(k => k + 1);
+                            }}
                           >
-                            <UserCog className="h-4 w-4" />
+                            <CheckCircle2 className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                            onClick={() => setProjectToDelete(project)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    )}
+                        )}
+                        {isManagerOrAbove && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                              title="Edit team"
+                              onClick={() => setEditTeamProjectId(project.id)}
+                            >
+                              <UserCog className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => setProjectToDelete(project)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2 min-w-[120px]">
                         <Progress value={progress} className="h-1.5 flex-1" />
@@ -283,7 +299,7 @@ export default function Projects() {
               })}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={isManagerOrAbove ? 9 : 8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     No projects match your filters
                   </TableCell>
                 </TableRow>
