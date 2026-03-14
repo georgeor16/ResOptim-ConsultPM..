@@ -76,7 +76,7 @@ async function main() {
       console.warn(`⚠️  No Notion page ID mapped for: ${docKey} — skipping.`);
       continue;
     }
-    const filePath = pin("docs", `${docKey}.md`);
+    const filePath = path.join("docs", `${docKey}.md`);
     if (!fs.existsSync(filePath)) {
       console.warn(`⚠️  File not found: ${filePath} — skipping.`);
       continue;
