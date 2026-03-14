@@ -29,4 +29,4 @@ jobs:
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_PAGE_IDS: ${{ secrets.NOTION_PAGE_IDS }}
-        run: node scripts/notion-sync.js
+        run: node scripts/notion-sync.cjs
