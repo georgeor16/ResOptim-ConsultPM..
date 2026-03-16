@@ -40,7 +40,7 @@ import { PushDevicesCard } from '@/components/PushDevicesCard';
 const TEMPLATABLE_CATEGORIES: ProjectCategory[] = ['Scouting', 'Event', 'Full Report', 'Light Report', 'Other'];
 
 export default function SettingsPage() {
-  const { isAdmin, currentUser, isManagerOrAbove } = useAuth();
+  const { isAdmin, currentUser } = useAuth();
   const navigate = useNavigate();
   const [customTemplates, setCustomTemplates] = useState<CategoryTemplate[]>(loadCustomTemplates());
   const [editingCategory, setEditingCategory] = useState<ProjectCategory | null>(null);
@@ -170,7 +170,7 @@ export default function SettingsPage() {
               orgId={org.id}
               orgName={org.name}
               currentUser={currentUser}
-              canAccessInsights={isManagerOrAbove}
+              canAccessInsights={true}
               role={role}
             />
             <ExternalNotificationsSettings

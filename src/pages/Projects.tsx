@@ -1,4 +1,3 @@
-import { useAuth } from '@/contexts/AuthContext';
 import { loadData, deleteProject, updateItem } from '@/lib/store';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -45,7 +44,6 @@ const statusColor = (s: string) => {
 };
 
 export default function Projects() {
-  const { isManagerOrAbove, currentUser } = useAuth();
   const navigate = useNavigate();
   const [refreshKey, setRefreshKey] = useState(0);
   const [data, setData] = useState<AppData | null>(null);
@@ -83,12 +81,7 @@ export default function Projects() {
     );
   }
 
-  const allProjects = isManagerOrAbove
-    ? data.projects
-    : data.projects.filter(p =>
-        data.allocations.some(a => a.projectId === p.id && a.userId === currentUser?.id) ||
-        data.tasks.some(t => t.projectId === p.id && (t.assigneeIds || []).includes(currentUser?.id || ''))
-      );
+  const allProjects = data.projects;
 
   const filtered = allProjects.filter(p => {
     const matchesSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.client.toLowerCase().includes(search.toLowerCase());
@@ -130,12 +123,10 @@ export default function Projects() {
           <h1 className="text-2xl font-bold text-foreground">Projects</h1>
           <p className="text-sm text-muted-foreground">{filtered.length} of {allProjects.length} projects</p>
         </div>
-        {isManagerOrAbove && (
-          <Button onClick={() => navigate('/projects/new')} className="bg-accent text-accent-foreground hover:bg-accent/90">
+        <Button onClick={() => navigate('/projects/new')} className="bg-accent text-accent-foreground hover:bg-accent/90">
             <Plus className="h-4 w-4 mr-2" />
             New Project
           </Button>
-        )}
       </div>
 
       {/* Filters */}
@@ -260,9 +251,7 @@ export default function Projects() {
                             <CheckCircle2 className="h-4 w-4" />
                           </Button>
                         )}
-                        {isManagerOrAbove && (
-                          <>
-                            <Button
+                        <Button
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-muted-foreground hover:text-foreground"
@@ -279,8 +268,6 @@ export default function Projects() {
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
-                          </>
-                        )}
                       </div>
                     </TableCell>
                     <TableCell>

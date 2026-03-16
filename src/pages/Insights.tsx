@@ -384,7 +384,7 @@ function healthChipClass(health: 'healthy' | 'attention' | 'critical'): string {
 }
 
 export default function Insights() {
-  const { isManagerOrAbove, currentUser } = useAuth();
+  const { currentUser } = useAuth();
   const [data, setData] = useState<AppData | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'planning' | 'capacity' | 'simulation' | 'team' | 'digest' | 'forecast'>('planning');
@@ -429,17 +429,7 @@ export default function Insights() {
   const orgViewAvailable =
     !!data && ((data.organisations?.length ?? 0) > 0 || teams.length > 1);
 
-  if (!isManagerOrAbove) {
-    return (
-      <div className="p-6">
-        <Card className="bg-background/80 backdrop-blur border border-white/10">
-          <CardContent className="py-10 text-center text-muted-foreground">
-            Access restricted — Insights are available for managers and admins only.
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+
 
   if (loading || !data) {
     return (

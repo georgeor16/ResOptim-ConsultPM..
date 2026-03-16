@@ -10,7 +10,6 @@ import type { AppData, Project } from '@/lib/types';
 interface ProjectCardsProps {
   data: AppData;
   visibleProjects: Project[];
-  isManagerOrAbove: boolean;
   baseCurrency: CurrencyCode;
   rates: FxRates;
 }
@@ -39,7 +38,7 @@ const marginColor = (m: number) => {
   return 'financial-negative';
 };
 
-export default function ProjectCards({ data, visibleProjects, isManagerOrAbove, baseCurrency, rates }: ProjectCardsProps) {
+export default function ProjectCards({ data, visibleProjects, baseCurrency, rates }: ProjectCardsProps) {
   const navigate = useNavigate();
 
   const conv = (amount: number, from: string) =>
@@ -52,11 +51,9 @@ export default function ProjectCards({ data, visibleProjects, isManagerOrAbove, 
           <FolderKanban className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-2">No projects yet</h3>
           <p className="text-sm text-muted-foreground mb-4">Create your first project to get started</p>
-          {isManagerOrAbove && (
-            <Button onClick={() => navigate('/projects/new')} className="bg-accent text-accent-foreground hover:bg-accent/90">
+          <Button onClick={() => navigate('/projects/new')} className="bg-accent text-accent-foreground hover:bg-accent/90">
               <Plus className="h-4 w-4 mr-2" /> Create Project
             </Button>
-          )}
         </CardContent>
       </Card>
     );
@@ -102,12 +99,10 @@ export default function ProjectCards({ data, visibleProjects, isManagerOrAbove, 
                 <span className="text-xs text-muted-foreground">{project.category}{project.category === 'Other' && project.categoryOtherSpec ? ` (${project.categoryOtherSpec})` : ''}</span>
               </div>
 
-              {isManagerOrAbove && (
-                <div className="flex items-center justify-between text-sm mb-3">
+              <div className="flex items-center justify-between text-sm mb-3">
                   <span className="text-muted-foreground">{formatMoneyWithCode(projectRevenue, baseCurrency)}{(project.feeType ?? 'monthly') === 'monthly' ? '/mo' : ''}</span>
                   <span className={marginColor(projectMargin)}>{projectMargin.toFixed(0)}% margin</span>
                 </div>
-              )}
 
               <div className="mb-3">
                 <div className="flex justify-between text-xs text-muted-foreground mb-1">

@@ -36,7 +36,13 @@ export default function Login() {
     } else {
       const { error: authError } = await supabase.auth.signUp({ email, password });
       if (authError) {
-        setError(authError.message);
+        const isLeakedPassword = authError.message.toLowerCase().includes('commonly used password')
+          || authError.message.toLowerCase().includes('leaked');
+        setError(
+          isLeakedPassword
+            ? 'This password has appeared in a data breach. Please choose a different password.'
+            : authError.message
+        );
       } else {
         setInfo('Account created. Check your email to confirm, or sign in now if email confirmation is disabled.');
         setMode('signin');

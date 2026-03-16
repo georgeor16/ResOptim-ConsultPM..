@@ -1,4 +1,3 @@
-import { useAuth } from '@/contexts/AuthContext';
 import { loadData } from '@/lib/store';
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -19,7 +18,6 @@ import { ActivityFeed } from '@/components/ActivityFeed';
 import { getRecentActivity } from '@/lib/notifications';
 
 export default function Dashboard() {
-  const { isManagerOrAbove, currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [data, setData] = useState<AppData | null>(null);
@@ -44,12 +42,7 @@ export default function Dashboard() {
 
   const activeProjects = data.projects.filter(p => p.status === 'Active');
 
-  const visibleProjects = isManagerOrAbove
-    ? data.projects
-    : data.projects.filter(p =>
-        data.allocations.some(a => a.projectId === p.id && a.userId === currentUser?.id) ||
-        data.tasks.some(t => t.projectId === p.id && (t.assigneeIds || []).includes(currentUser?.id || ''))
-      );
+  const visibleProjects = data.projects;
 
   const recentActivity = getRecentActivity(7);
 
@@ -59,7 +52,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            {isManagerOrAbove ? `${activeProjects.length} active projects` : 'Your assigned projects'}
+            {`${activeProjects.length} active projects`}
           </p>
         </div>
       <div className="flex items-center gap-2">
@@ -75,80 +68,69 @@ export default function Dashboard() {
             <RotateCcw className="h-4 w-4 mr-2" />
             Reset layout
           </Button>
-          {isManagerOrAbove && (
-            <Button onClick={() => navigate('/projects/new')} className="bg-accent text-accent-foreground hover:bg-accent/90">
+          <Button onClick={() => navigate('/projects/new')} className="bg-accent text-accent-foreground hover:bg-accent/90">
               <Plus className="h-4 w-4 mr-2" />
               New Project
             </Button>
-          )}
         </div>
       </div>
 
-      {isManagerOrAbove && (
-        <>
-          <CollapsibleSection title="Key Metrics">
-            <KpiCards data={data} activeProjects={activeProjects} baseCurrency={baseCurrency} rates={rates} />
-          </CollapsibleSection>
-          <CollapsibleSection title="Overdue Tasks">
-            <OverdueResources data={data} />
-          </CollapsibleSection>
-        </>
-      )}
+      <CollapsibleSection title="Key Metrics">
+          <KpiCards data={data} activeProjects={activeProjects} baseCurrency={baseCurrency} rates={rates} />
+        </CollapsibleSection>
+        <CollapsibleSection title="Overdue Tasks">
+          <OverdueResources data={data} />
+        </CollapsibleSection>
 
       <CollapsibleSection title="Projects">
         <ProjectCards
           data={data}
           visibleProjects={visibleProjects}
-          isManagerOrAbove={isManagerOrAbove}
           baseCurrency={baseCurrency}
           rates={rates}
         />
       </CollapsibleSection>
 
-      {isManagerOrAbove && (
-        <>
-          <CollapsibleSection title="Activity Feed">
-            <ActivityFeed events={recentActivity} compact />
-          </CollapsibleSection>
-          <CollapsibleSection title="Project Timeline">
-            <UnifiedGantt
-              data={data}
-              chartRef={ganttChartRef}
-              onExportClick={() => setExportPanelOpen(true)}
-            />
-            <GanttExportPanel
-              open={exportPanelOpen}
-              onOpenChange={setExportPanelOpen}
-              data={data}
-              exportTitle="All Projects"
-              isCumulative
-              chartRef={ganttChartRef}
-              onExportPdf={(blob, filename) => {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              onExportPng={(blob, filename) => {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-            />
-          </CollapsibleSection>
-          <CollapsibleSection title="Team Utilization">
-            <TeamHeatmap data={data} />
-          </CollapsibleSection>
-          <CollapsibleSection title="Revenue Forecast">
-            <RevenueForecast data={data} baseCurrency={baseCurrency} rates={rates} />
-          </CollapsibleSection>
-        </>
-      )}
+      <CollapsibleSection title="Activity Feed">
+          <ActivityFeed events={recentActivity} compact />
+        </CollapsibleSection>
+        <CollapsibleSection title="Project Timeline">
+          <UnifiedGantt
+            data={data}
+            chartRef={ganttChartRef}
+            onExportClick={() => setExportPanelOpen(true)}
+          />
+          <GanttExportPanel
+            open={exportPanelOpen}
+            onOpenChange={setExportPanelOpen}
+            data={data}
+            exportTitle="All Projects"
+            isCumulative
+            chartRef={ganttChartRef}
+            onExportPdf={(blob, filename) => {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = filename;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            onExportPng={(blob, filename) => {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = filename;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          />
+        </CollapsibleSection>
+        <CollapsibleSection title="Team Utilization">
+          <TeamHeatmap data={data} />
+        </CollapsibleSection>
+        <CollapsibleSection title="Revenue Forecast">
+          <RevenueForecast data={data} baseCurrency={baseCurrency} rates={rates} />
+        </CollapsibleSection>
     </div>
   );
 }

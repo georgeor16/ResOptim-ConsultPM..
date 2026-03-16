@@ -48,7 +48,7 @@ _Log every meaningful architectural or product decision here. Include tradeoffs.
 - **Tradeoffs:** `manager` and `admin` are functionally identical at the database layer; any future distinction between them would require a migration
 - **Alternatives considered:** Treating manager as member-level — rejected as it would block managers from creating and editing projects
 
-### RLS member visibility scope
+### RLS member visibility scope _(superseded — see "Remove all member access restrictions" below)_
 - **Date:** 2026-03-15
 - **What:** Members can SELECT all rows in projects, phases, tasks, subtasks, allocations, timelogs; write access restricted to own data only
 - **Why:** This is an internal tool used by a single trusted team — full project visibility is needed for coordination; write isolation prevents accidental cross-member edits
@@ -70,6 +70,24 @@ _Log every meaningful architectural or product decision here. Include tradeoffs.
 - **Why:** Avoids requiring every user to run a manual SQL `UPDATE` to link their Auth account. Sign up with matching email → app self-configures.
 - **Tradeoffs:** On first login there's one extra Supabase write (updating `auth_id`). If a user signs up with a different email than their `public.users` record, they'll see an "Account not linked" message instead of silently failing.
 - **Alternatives considered:** Manual SQL linking by an admin — rejected as too much friction for initial setup
+
+### Leaked password protection deferred to Pro plan
+- **Date:** 2026-03-16
+- **What:** Supabase's HaveIBeenPwned.org integration ("Prevent use of leaked passwords") is a Pro plan feature and cannot be enabled on the Free tier. Frontend error handling for the HIBP error code (`"commonly used password"`) was added to the signup flow in `Login.tsx` as a precaution.
+- **Why:** The Supabase dashboard flags this as a security advisory. The frontend handling is future-proof: when the project upgrades to Pro and the feature is enabled, the user-facing error message will already be clean.
+- **Tradeoffs:** No server-side password breach check on Free tier — users can sign up with compromised passwords. The frontend message alone provides no real protection.
+- **Alternatives considered:** Client-side zxcvbn password strength meter — rejected as over-engineering for an internal tool with a small, trusted user base
+
+---
+
+### Remove all member access restrictions — members now identical to admin/manager
+- **Date:** 2026-03-16
+- **What:** All `isManagerOrAbove` frontend guards removed from 11 files; RLS policies for `users`, `timelogs`, and `alerts` updated via migration 012 to give members full SELECT/INSERT/UPDATE/DELETE access identical to admin/manager. Pages previously blocked to members (Resources, Bandwidth, Team, Insights, Simulation, New Project) are now fully accessible. Project/task/phase filtering by assignee removed. Financial metrics, export, and all edit/delete controls are now visible to all roles.
+- **Why:** The member role distinction was adding friction for a small, trusted internal team where all members need to operate the full tool. Maintaining dual UI surfaces and restrictive RLS was costing development time and causing UX inconsistencies.
+- **Tradeoffs:** The `role` field on `public.users` is retained and still accurate — it drives `isAdmin` checks in Settings. If access restrictions need to be reintroduced later, the infrastructure (RLS policies, `isManagerOrAbove` flag in AuthContext) is still in place and just needs to be rewired.
+- **Alternatives considered:** Flipping `isManagerOrAbove` to always return `true` — rejected; leaves a semantically incorrect flag that traps future developers. Removing guards at each call site (option b) is cleaner and honest.
+
+---
 
 ### Simulation share link auth pattern
 - **Date:** 2026-03-15

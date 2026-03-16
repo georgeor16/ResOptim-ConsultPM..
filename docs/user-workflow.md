@@ -16,9 +16,9 @@ An internal platform for the Mind the Bridge consulting team to manage projects,
 | Role | What they can do |
 |---|---|
 | **Admin / Manager** | Full access: create projects, allocate team, view all data, run simulations, export |
-| **Member** | Full access to projects, phases, tasks, subtasks, and allocations; write own time logs, calendar profile, and team member record |
+| **Member** | Full access — identical to Admin/Manager in all operations |
 
-Role is set per user and determines data access at the database layer (RLS). All three roles (`admin`, `manager`, `member`) see all nav items.
+Role is set per user. All three roles (`admin`, `manager`, `member`) have identical access at both the database and UI layers. `isAdmin` is still used for org-level admin settings in Settings.
 
 ---
 
@@ -31,7 +31,7 @@ Role is set per user and determines data access at the database layer (RLS). All
 When Supabase is configured, all routes (except `/login` and `/simulation/review/:shareId`) require an authenticated session.
 
 - **Sign in** — email + password via Supabase Auth
-- **Create account** — toggle to "Create one" on the login page; sign up with the email that matches your record in the system
+- **Create account** — toggle to "Create one" on the login page; sign up with the email that matches your record in the system. If your password has appeared in a known data breach (when the Pro plan feature is enabled), you'll see: *"This password has appeared in a data breach. Please choose a different password."*
 - **Sign out** — user chip in the bottom of the sidebar → **Sign out**
 
 Email matching: on first login the app resolves your `public.users` record by email and links your Auth account automatically. Subsequent logins use the linked ID directly.
@@ -152,7 +152,7 @@ The dashboard is the daily landing page. It shows:
 - **Overdue resources** — tasks flagged as overdue; clicking an overdue task navigates directly to the project view. Completed projects are excluded.
 - **Activity feed** — recent events from the last 7 days
 
-Both roles can see all projects on the dashboard.
+All roles can see all projects on the dashboard.
 
 ---
 
@@ -175,7 +175,7 @@ High-level analytical view across the portfolio:
 
 **Route:** `/simulation`
 
-Lets managers model allocation changes without affecting live data.
+Lets any team member model allocation changes without affecting live data.
 
 **How it works:**
 1. Enter simulation mode (toggle in the Simulation page)
@@ -269,19 +269,19 @@ For each channel, users set:
 
 ## Access control
 
-Row-level security (RLS) is enforced at the database layer for all tables. Role is set on the `users` record and cannot be self-assigned. `admin` and `manager` have identical database access.
+Row-level security (RLS) is enforced at the database layer for all tables. Role is set on the `users` record and cannot be self-assigned. All three roles (`admin`, `manager`, `member`) have identical database access.
 
 | What | Admin / Manager | Member |
 |---|---|---|
 | Create / view / edit / delete projects, phases, tasks, subtasks, allocations | All | All |
-| Log time against tasks | All entries | Own entries only |
-| Edit team member record | All | Own only |
-| Edit calendar profile | All | Own only |
-| View user records | All | Own only |
-| Run simulations | Yes | No |
-| View simulation share links | Yes (+ recipients via link) | Via share link only |
-| Export | Yes | No |
-| Delete timelogs / alerts (cascade) | Yes | Yes (required for project/task deletion to cascade correctly) |
+| Log time against tasks | All entries | All entries |
+| Edit team member records | All | All |
+| Edit calendar profiles | All | All |
+| View user records | All | All |
+| Run simulations | Yes | Yes |
+| View simulation share links | Yes (+ recipients via link) | Yes (+ recipients via link) |
+| Export | Yes | Yes |
+| Delete timelogs / alerts | Yes | Yes |
 
 Share links (`/simulation/review/:shareId`) are accessible without login — the server validates the token server-side.
 

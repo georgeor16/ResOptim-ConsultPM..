@@ -209,15 +209,12 @@ RLS is enabled on all tables. Three roles: `admin` and `manager` (full access to
 ### `users`
 | Operation | Admin | Member |
 |---|---|---|
-| SELECT | All rows | Own row only (`id = auth.uid()`) |
-| UPDATE | Allowed | Own row only |
-| INSERT / DELETE | Allowed | Denied |
+| SELECT / INSERT / UPDATE / DELETE | All rows | All rows |
 
 ### `timelogs`
 | Operation | Admin | Member |
 |---|---|---|
-| SELECT | All rows | All rows |
-| INSERT / UPDATE / DELETE | Allowed | Own rows only (`user_id = auth.uid()`) |
+| SELECT / INSERT / UPDATE / DELETE | All rows | All rows |
 
 ### `calendar_profiles`
 | Operation | Admin | Member |
@@ -229,8 +226,7 @@ RLS is enabled on all tables. Three roles: `admin` and `manager` (full access to
 ### `alerts`
 | Operation | Admin | Member |
 |---|---|---|
-| SELECT | All rows | Own (`user_id = auth.uid()`) + org-wide (`user_id IS NULL`) |
-| INSERT / UPDATE / DELETE | Allowed | Denied (system-generated only) |
+| SELECT / INSERT / UPDATE / DELETE | All rows | All rows |
 
 ### `simulations`
 | Operation | Admin | Member |
@@ -257,6 +253,7 @@ RLS is enabled on all tables. Three roles: `admin` and `manager` (full access to
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-03-16 | Migration 012: member full access on users, timelogs, alerts — all three tables now identical to admin/manager | — |
 | 2026-03-16 | Added auth_id column to users table (migration 011); updated get_my_role() to resolve by auth_id | — |
 | 2026-03-15 | Defined RLS rules for all 13 tables; resolved share link auth pattern (service role key) | — |
 | 2026-03-15 | Added simulations, simulation_templates, scheduling_config tables; added user_id to alerts; updated localStorage section | — |

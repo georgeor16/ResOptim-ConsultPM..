@@ -54,7 +54,7 @@ function loadBarClass(fte: number): string {
 }
 
 export default function BandwidthOverview() {
-  const { isManagerOrAbove, currentUser } = useAuth();
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const simulation = useSimulationOptional();
@@ -418,11 +418,7 @@ export default function BandwidthOverview() {
     }
   };
 
-  if (!isManagerOrAbove) {
-    return (
-      <div className="text-center py-12 text-muted-foreground">Access restricted</div>
-    );
-  }
+
 
   if (!data) {
     return (

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
 import { loadData } from '@/lib/store';
 import type { AppData } from '@/lib/types';
 import { getMemberTotalPeakFte, getMemberProjectFtePercent } from '@/lib/bandwidth';
@@ -96,7 +95,6 @@ function getWorkingDaysInMonth(month: number, year: number): number {
 }
 
 export default function ResourceAllocation() {
-  const { isManagerOrAbove } = useAuth();
   const [data, setData] = useState<AppData | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('week');
   const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
@@ -142,9 +140,6 @@ export default function ResourceAllocation() {
     return map;
   }, [data, displayWeeks, activeProjects]);
 
-  if (!isManagerOrAbove) {
-    return <div className="text-center py-12 text-muted-foreground">Access restricted</div>;
-  }
   if (!data) {
     return (
       <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">Loading...</div>

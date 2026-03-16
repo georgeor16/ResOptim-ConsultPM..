@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
 import { loadData, addItem, genId } from '@/lib/store';
 import type { AppData } from '@/lib/types';
 import type {
@@ -59,7 +58,6 @@ interface PhaseEntry {
 
 export default function NewProject() {
   const navigate = useNavigate();
-  const { isManagerOrAbove } = useAuth();
   const [data, setData] = useState<AppData | null>(null);
 
   useEffect(() => {
@@ -163,10 +161,6 @@ export default function NewProject() {
     );
   }, [phaseEntries]);
 
-  if (!isManagerOrAbove) {
-    navigate('/');
-    return null;
-  }
   if (!data) {
     return (
       <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">Loading...</div>

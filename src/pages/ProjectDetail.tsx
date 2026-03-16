@@ -173,7 +173,6 @@ function DraggableTaskRow(props: {
   concurrencyWarnings: { user: User; ftePercent: number; slotLabel: string }[];
   noAvailabilityAssignees: User[];
   canToggle: boolean;
-  isManagerOrAbove: boolean;
   showCompletedTasks: boolean;
   activeDragTaskId: string | null;
   isSelected: boolean;
@@ -200,7 +199,6 @@ function DraggableTaskRow(props: {
     concurrencyWarnings,
     noAvailabilityAssignees,
     canToggle,
-    isManagerOrAbove,
     showCompletedTasks,
     activeDragTaskId,
     isSelected,
@@ -273,7 +271,7 @@ function DraggableTaskRow(props: {
         >
           {task.status === 'Done' ? <Check className="h-3.5 w-3.5 text-accent-foreground" /> : <Square className="h-3.5 w-3.5 text-muted-foreground/60" />}
         </button>
-        <Select value={task.status} onValueChange={(v) => onStatusChange(task, v as TaskStatus)} disabled={!isManagerOrAbove && !(task.assigneeIds || []).includes(currentUserId)}>
+        <Select value={task.status} onValueChange={(v) => onStatusChange(task, v as TaskStatus)}>
           <SelectTrigger className="w-[130px] h-7 text-xs" onClick={(e) => e.stopPropagation()}>
             <SelectValue />
           </SelectTrigger>
@@ -397,13 +395,11 @@ function DraggableTaskRow(props: {
             Overdue
           </Badge>
         )}
-        {isManagerOrAbove && (
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); onDeleteClick(task.id); }}>
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
           </div>
-        )}
       </div>
     </div>
   );
@@ -415,7 +411,6 @@ function PhaseCard(props: {
   expanded: boolean;
   dragOverId: string | null;
   phaseDropId: string;
-  isManagerOrAbove: boolean;
   projectId: string;
   projectName: string;
   togglePhase: (phaseId: string) => void;
@@ -444,7 +439,6 @@ function PhaseCard(props: {
     expanded,
     dragOverId,
     phaseDropId,
-    isManagerOrAbove,
     projectId,
     projectName,
     togglePhase,
@@ -522,8 +516,7 @@ function PhaseCard(props: {
             </button>
           )}
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            {isManagerOrAbove ? (
-              <Input
+            <Input
                 defaultValue={phase.name}
                 onBlur={async (e) => {
                   const value = e.target.value.trim();
@@ -536,9 +529,6 @@ function PhaseCard(props: {
                 onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                 className="h-7 text-sm font-semibold bg-background/40 border-white/10 px-2 py-1 w-40"
               />
-            ) : (
-              <span className="font-semibold">{phase.name}</span>
-            )}
             <span className="text-xs text-muted-foreground">{phDone}/{phaseTasks.length} done</span>
           </div>
           {typeof plannedFte === 'number' && (
@@ -568,7 +558,7 @@ function PhaseCard(props: {
                 const profile = getMemberCalendar(u);
                 return getAvailableHoursForMember(profile, task.startDate, task.dueDate) === 0;
               });
-              const canToggle = isManagerOrAbove || (task.assigneeIds || []).includes(currentUserId);
+              const canToggle = true;
               return (
                 <DraggableTaskRow
                   key={task.id}
@@ -583,7 +573,6 @@ function PhaseCard(props: {
                   concurrencyWarnings={concurrencyWarnings}
                   noAvailabilityAssignees={noAvailabilityAssignees}
                   canToggle={canToggle}
-                  isManagerOrAbove={isManagerOrAbove}
                   showCompletedTasks={showCompletedTasks}
                   activeDragTaskId={activeDragTaskId}
                   isSelected={selectedTaskIds.has(task.id)}
@@ -610,7 +599,7 @@ function PhaseCard(props: {
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isManagerOrAbove, isAdmin, currentUser } = useAuth();
+  const { isAdmin, currentUser } = useAuth();
   const simulation = useSimulationOptional();
   const [refreshKey, setRefreshKey] = useState(0);
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
@@ -1206,7 +1195,7 @@ export default function ProjectDetail() {
   };
 
   // Filter tasks for team members
-  const visibleTasks = isManagerOrAbove ? tasks : tasks.filter(t => (t.assigneeIds || []).includes(currentUser?.id || ''));
+  const visibleTasks = tasks;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -1227,8 +1216,7 @@ export default function ProjectDetail() {
           </div>
           <p className="text-sm text-muted-foreground">{project.client} · {project.category}{project.category === 'Other' && project.categoryOtherSpec ? ` (${project.categoryOtherSpec})` : ''}</p>
         </div>
-        {isManagerOrAbove && (
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -1255,11 +1243,10 @@ export default function ProjectDetail() {
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
-        )}
       </div>
 
       {/* Overage alerts */}
-      {isManagerOrAbove && overageAlerts.length > 0 && (
+      {overageAlerts.length > 0 && (
         <Card className="border-warning/30 bg-warning/5">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -1288,9 +1275,7 @@ export default function ProjectDetail() {
 
         <TabsContent value="overview" className="mt-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {isManagerOrAbove && (
-              <>
-                <Card>
+            <Card>
                   <CardContent className="p-4">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium mb-1"><DollarSign className="h-3.5 w-3.5" />Fee</div>
                     <p className="text-xl font-bold">{formatMoneyWithCode(projectRevenue, baseCurrency as CurrencyCode)}</p>
@@ -1303,8 +1288,6 @@ export default function ProjectDetail() {
                     <p className="text-xs text-muted-foreground">{formatMoneyWithCode(projectRevenue - projectCost, baseCurrency as CurrencyCode)}</p>
                   </CardContent>
                 </Card>
-              </>
-            )}
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium mb-1"><CheckCircle2 className="h-3.5 w-3.5" />Progress</div>
@@ -1383,7 +1366,7 @@ export default function ProjectDetail() {
                               {capacityConflict.status === 'exceeds' && (
                                 <span className="text-[10px] font-normal text-amber-600 dark:text-amber-400 opacity-90">Over capacity commitment</span>
                               )}
-                              {isManagerOrAbove && simulation && (
+                              {simulation && (
                                 <button
                                   type="button"
                                   className="text-[10px] text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity inline-flex items-center gap-0.5"
@@ -1407,7 +1390,7 @@ export default function ProjectDetail() {
                         </div>
                         <div className="flex items-center gap-4 text-sm">
                           <LoadPill ftePercent={totalPeakFte} showValue={true} />
-                          {isManagerOrAbove && alloc && (
+                          {alloc && (
                             <Button
                               variant="ghost"
                               size="icon"
@@ -1440,8 +1423,7 @@ export default function ProjectDetail() {
               />
               <span>Show completed tasks</span>
             </label>
-            {isManagerOrAbove && (
-              <Dialog
+            <Dialog
                 open={taskDialogOpen}
                 onOpenChange={open => {
                   setTaskDialogOpen(open);
@@ -1566,7 +1548,6 @@ export default function ProjectDetail() {
                   </div>
                 </DialogContent>
               </Dialog>
-            )}
           </div>
 
           {phases.length === 0 ? (
@@ -1590,7 +1571,6 @@ export default function ProjectDetail() {
                 expanded={expandedPhases.has(phase.id)}
                 dragOverId={dragOverId}
                 phaseDropId={`${PHASE_DROP_PREFIX}${phase.id}`}
-                isManagerOrAbove={!!isManagerOrAbove}
                 projectId={project.id}
                 projectName={project.name}
                 togglePhase={togglePhase}

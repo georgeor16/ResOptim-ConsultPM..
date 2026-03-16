@@ -197,7 +197,7 @@ Responsibilities:
 ### Row-Level Security (RLS)
 RLS is enabled on all Supabase tables. Access is governed by a `get_my_role()` security-definer function that reads `users.role` for the authenticated user.
 
-**Roles:** `admin`, `manager` (identical access — full CRUD on all tables), `member` (full CRUD on projects, phases, tasks, subtasks, allocations; own-row/own-entry access on users, timelogs, alerts).
+**Roles:** `admin`, `manager`, `member` — all three have identical full CRUD access on all tables as of migration 012.
 
 **Migrations:**
 - `007_rls_role_based_policies.sql` — `get_my_role()` function + initial role-based policies on 8 tables
@@ -205,6 +205,7 @@ RLS is enabled on all Supabase tables. Access is governed by a `get_my_role()` s
 - `009_phases_tasks_allocations_member_full_access.sql` — corrected phases, tasks, subtasks, allocations to give members full access
 - `010_fix_cascade_delete_rls.sql` — extended timelog/alert delete to all authenticated users (cascade delete fix)
 - `011_add_auth_id_to_users.sql` — added `auth_id uuid` column to `public.users`; updated `get_my_role()` to resolve role via Supabase Auth UID
+- `012_member_full_access_users_timelogs_alerts.sql` — extended member full access to `users`, `timelogs`, `alerts`; all roles now identical at the DB layer
 
 **Auth integration:** `AuthContext` uses `supabase.auth.getSession()` / `onAuthStateChange()` when Supabase is configured. Falls back to mock auth (localStorage user switching) when Supabase is not configured. A `/login` route (email + password) is the entry point for authenticated sessions. Users are linked via `public.users.auth_id = auth.uid()`.
 
@@ -225,6 +226,7 @@ See `docs/supabase-schema.md` → RLS Rules for the full per-table policy breakd
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-03-16 | Removed all member access restrictions: migration 012 + 11 frontend files updated; all roles now identical | — |
 | 2026-03-16 | Added Supabase Auth integration: auth_id column, Login page, AuthContext rewrite, Layout redirect, AppSidebar sign-out | — |
 | 2026-03-15 | Added Security section: RLS roles, get_my_role() function, migration references, share link auth pattern | edd8cdf |
 | 2026-03-15 | Confirmed full stack from package.json: added TanStack Query, Recharts, dnd-kit, jsPDF, shadcn/ui, Sonner, Vitest; removed TBD styling entry; pinned versions | — |

@@ -366,7 +366,7 @@ function BandwidthTablePanel({
 }
 
 export default function Simulation() {
-  const { isManagerOrAbove, currentUser } = useAuth();
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const sim = useSimulation();
   const [applyConfirmOpen, setApplyConfirmOpen] = useState(false);
@@ -772,12 +772,6 @@ export default function Simulation() {
     setShowDiscardConfirm(true);
   }, [sim.steps.length, performDiscard]);
 
-
-  if (!isManagerOrAbove) {
-    return (
-      <div className="text-center py-12 text-muted-foreground">Access restricted</div>
-    );
-  }
 
   if (!sim.baseData || !sim.simulatedData) {
     return (

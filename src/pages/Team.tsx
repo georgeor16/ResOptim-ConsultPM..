@@ -23,7 +23,7 @@ const AVATAR_COLORS = [
 ];
 
 export default function Team() {
-  const { isManagerOrAbove, isAdmin, refreshUsers } = useAuth();
+  const { isAdmin, refreshUsers } = useAuth();
   const [refreshKey, setRefreshKey] = useState(0);
   const [data, setData] = useState<AppData | null>(null);
   const baseCurrency = getBaseCurrency();
@@ -48,9 +48,6 @@ export default function Team() {
   const computedBillableRate = computedHourlyRate * 1.25;
   const computedMonthlySalary = form.annualSalary ? parseFloat(form.annualSalary) / 12 : 0;
 
-  if (!isManagerOrAbove) {
-    return <div className="text-center py-12 text-muted-foreground">Access restricted</div>;
-  }
   if (!data) {
     return (
       <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">Loading...</div>
