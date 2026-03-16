@@ -1,6 +1,6 @@
 # Export — Feature Doc
 
-_Last updated: 2026-03-13_
+_Last updated: 2026-03-15_
 
 ---
 
@@ -15,4 +15,5 @@ Export project data in multiple formats with granular filters.
 - CSV export in scope?
 
 ## Status
-- [ ] In progress
+**Stage:** ~50% complete
+PDF and PNG export working. Google Slides and Google Docs integration still in progress. CSV export remains an open question.

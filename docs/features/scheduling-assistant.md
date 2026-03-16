@@ -1,6 +1,6 @@
 # Scheduling Assistant — Feature Doc
 
-_Last updated: 2026-03-13_
+_Last updated: 2026-03-15_
 
 ---
 
@@ -13,4 +13,5 @@ Panel for batch-resolving unscheduled tasks with proactive scheduling review.
 - Reads calendar profiles for member availability
 
 ## Status
-- [ ] In progress
+**Stage:** ~50% complete
+Unscheduled task surfacing in place. Configurable review cadence, health score chip, and calendar profile integration still in progress.

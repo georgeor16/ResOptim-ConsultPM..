@@ -186,6 +186,6 @@ The app maintains an in-app notification system. Events (task completion, overal
 | **Supabase** | When `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set |
 | **localStorage** | Fallback when Supabase is not configured |
 
-Core tables (Supabase): `users`, `projects`, `allocations`, `phases`, `tasks`, `subtasks`, `timelogs`, `alerts`
+Core tables (Supabase): `users`, `projects`, `allocations`, `phases`, `tasks`, `subtasks`, `timelogs`, `alerts`, `simulations`, `simulation_templates`, `scheduling_config`
 
 Org/team/taxonomy metadata always stays in `localStorage` even when Supabase is active.

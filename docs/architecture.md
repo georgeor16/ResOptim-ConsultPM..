@@ -188,7 +188,6 @@ Responsibilities:
 ## Open Decisions
 
 - CSV export: in scope or out? (PDF/PNG/GSlides/GDocs confirmed; CSV unresolved)
-- RLS strategy: row-level security rules not yet designed or documented
 - Real-time updates: Supabase realtime subscriptions not yet in scope
 
 ---

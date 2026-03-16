@@ -1,6 +1,6 @@
 # Gantt Chart — Feature Doc
 
-_Last updated: 2026-03-13_
+_Last updated: 2026-03-15_
 
 ---
 
@@ -13,4 +13,5 @@ Auto-generated timeline view per project and aggregated on dashboard.
 - Member view with bandwidth overlay toggle
 
 ## Status
-- [ ] In progress
+**Stage:** ~50% complete
+Read-only timeline view renders per project. Bandwidth overlay toggle and real-time updates on task change still in progress.
