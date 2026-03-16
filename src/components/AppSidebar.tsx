@@ -1,4 +1,5 @@
 import { LayoutDashboard, FolderKanban, Users, CalendarRange, Settings, ChevronDown, ChevronRight, LogOut, Gauge, BarChart3, FlaskConical } from 'lucide-react';
+import { isSupabaseConfigured } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -42,7 +43,7 @@ export function AppSidebar() {
   const { state, open, toggleSidebar, isHoverExpanded } = useSidebar();
   const collapsed = state === 'collapsed';
   const isExpanded = open || isHoverExpanded;
-  const { currentUser, users, switchUser, hasRole } = useAuth();
+  const { currentUser, users, switchUser, signOut, hasRole } = useAuth();
   const navigate = useNavigate();
 
   const roleLabel = (role: string) => {
@@ -218,30 +219,43 @@ export function AppSidebar() {
                 </DropdownMenuTrigger>
               )}
             <DropdownMenuContent align="end" side="top" className="w-56">
-              <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Switch User</div>
-              {users.map(user => (
-                <DropdownMenuItem
-                  key={user.id}
-                  onClick={() => switchUser(user.id)}
-                  className={currentUser.id === user.id ? 'bg-accent' : ''}
-                >
-                  <div
-                    className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold mr-2 shrink-0"
-                    style={{ backgroundColor: user.avatarColor, color: 'white' }}
-                  >
-                    {user.name.split(' ').map(n => n[0]).join('')}
-                  </div>
-                  <div>
-                    <p className="text-sm">{user.name}</p>
-                    <p className="text-xs text-muted-foreground">{roleLabel(user.role)}</p>
-                  </div>
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
+              {!isSupabaseConfigured && (
+                <>
+                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Switch User</div>
+                  {users.map(user => (
+                    <DropdownMenuItem
+                      key={user.id}
+                      onClick={() => switchUser(user.id)}
+                      className={currentUser.id === user.id ? 'bg-accent' : ''}
+                    >
+                      <div
+                        className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold mr-2 shrink-0"
+                        style={{ backgroundColor: user.avatarColor, color: 'white' }}
+                      >
+                        {user.name.split(' ').map(n => n[0]).join('')}
+                      </div>
+                      <div>
+                        <p className="text-sm">{user.name}</p>
+                        <p className="text-xs text-muted-foreground">{roleLabel(user.role)}</p>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem onClick={() => navigate('/settings')}>
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
               </DropdownMenuItem>
+              {isSupabaseConfigured && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => signOut()}>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Sign out
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}

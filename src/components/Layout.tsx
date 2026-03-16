@@ -7,16 +7,40 @@ import { SchedulingAssistantButton } from '@/components/SchedulingAssistant';
 import { ConflictResolutionTrigger } from '@/components/ConflictResolutionSheet';
 import { SimulationBanner } from '@/components/SimulationBanner';
 import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { loadData } from '@/lib/store';
 import { runOrganisationNotificationChecks } from '@/lib/orgNotificationEngine';
 import { addNotification } from '@/lib/notifications';
 import { isInScheduledPauseWindow, getActiveScheduledPause } from '@/lib/scheduledPause';
 import { formatTimeForDisplay } from '@/lib/scheduledPause';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 export function Layout({ children }: { children: ReactNode }) {
-  const { currentUser, dataLoaded } = useAuth();
+  const { currentUser, sessionExists, dataLoaded } = useAuth();
+  const navigate = useNavigate();
+
+  // Redirect to login only when there is no auth session at all
+  useEffect(() => {
+    if (isSupabaseConfigured && dataLoaded && !sessionExists) {
+      navigate('/login', { replace: true });
+    }
+  }, [dataLoaded, sessionExists, navigate]);
 
   if (!dataLoaded || !currentUser) {
+    // If authenticated but no matching public.users row, show a clear message instead of looping
+    if (isSupabaseConfigured && dataLoaded && sessionExists && !currentUser) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <div className="text-center space-y-3 max-w-sm px-4">
+            <p className="font-medium">Account not linked</p>
+            <p className="text-sm text-muted-foreground">
+              Your login email doesn't match any user in the system. Ask an admin to add your
+              email to the team, or contact support.
+            </p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="animate-pulse text-muted-foreground">Loading...</div>

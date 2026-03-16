@@ -1,6 +1,6 @@
 # User Workflow — MtB Resource Optimization & PM Tool
 
-_Last updated: 2026-03-15_
+_Last updated: 2026-03-16_
 _This is the onboarding map for new team members. Update after every new or changed feature._
 
 ---
@@ -16,49 +16,95 @@ An internal platform for the Mind the Bridge consulting team to manage projects,
 | Role | What they can do |
 |---|---|
 | **Admin / Manager** | Full access: create projects, allocate team, view all data, run simulations, export |
-| **Team member** | Full access to projects, phases, tasks, subtasks, and allocations; write own time logs, calendar profile, and team member record |
+| **Member** | Full access to projects, phases, tasks, subtasks, and allocations; write own time logs, calendar profile, and team member record |
 
-Role is set per user and determines what pages and data are visible.
+Role is set per user and determines data access at the database layer (RLS). All three roles (`admin`, `manager`, `member`) see all nav items.
 
 ---
 
 ## Core User Journeys
 
-### 1. First run / onboarding
+### 1. Login / logout
+
+**Route:** `/login`
+
+When Supabase is configured, all routes (except `/login` and `/simulation/review/:shareId`) require an authenticated session.
+
+- **Sign in** — email + password via Supabase Auth
+- **Create account** — toggle to "Create one" on the login page; sign up with the email that matches your record in the system
+- **Sign out** — user chip in the bottom of the sidebar → **Sign out**
+
+Email matching: on first login the app resolves your `public.users` record by email and links your Auth account automatically. Subsequent logins use the linked ID directly.
+
+If your login email doesn't match any user in the system, you'll see an "Account not linked" message — ask an admin to check your email in the team records.
+
+When Supabase is **not** configured (localStorage mode), login is not required — the app loads with a default user and supports manual user switching via the sidebar user chip.
+
+---
+
+### 2. First run / onboarding
 
 On first load the app seeds demo data automatically (projects, team members, allocations). This gives a working starting point to explore all features without manual setup.
 
 ---
 
-### 2. Creating a project
+### 3. Creating a project
 
 **Route:** `/projects/new`
 
 1. Go to **Projects** in the sidebar
 2. Click **New Project**
-3. Fill in: name, category, start date, end date, status
-4. Optionally add phases and tasks at creation time, or do it later in the project detail view
-5. Save — project appears in the project list and on the dashboard Gantt
-
-**Project statuses:** Active, On Hold, Completed, Cancelled
+3. Fill in project details:
+   - **Name** and **client**
+   - **Category** — choose a template: Scouting, Event, Full Report, Light Report, or Other (with custom specify field). Selecting a category auto-populates standard phases.
+   - **Priority** and **Status** (Active, On Hold, Completed, Cancelled)
+   - **Start / end dates**
+   - **Fee** — set amount, fee type (Monthly or Project Fee), and currency
+4. Add or edit **phases** — each phase has a name, duration, and FTE percentage
+5. Allocate **team members** by % of project ownership; the form calculates derived FTE demand per person and warns if anyone would be overallocated
+6. Save — project appears in the project list and on the dashboard Gantt
 
 ---
 
-### 3. Managing a project
+### 4. Managing a project
 
 **Route:** `/projects/:id`
 
-Inside a project detail page:
+The project detail page is a multi-tab hub:
 
-- **Phases** — break the project into sequential phases; each phase has a start/end date
-- **Tasks** — tasks belong to a phase; each task can be assigned to one or more team members, given a start/end date, and marked complete
-- **Subtasks** — tasks can be broken down further into subtasks
-- **Time logs** — team members can log hours against tasks
+**Tasks tab**
+- Tasks belong to phases; each task has a name, status (Backlog / In Progress / Complete), assignees (multi-select), start/end dates, duration, and client involvement level (Input / Approval / Review — shown as a badge)
+- Drag tasks between status columns or edit inline
 - Completing a task automatically releases the allocated FTE% for that period
+- Deleting a task shows a confirmation dialog before removing it and its timelogs
+
+**Phases tab**
+- Add, edit, or remove phases; each phase has start/end dates and an Effort field (with units: hours, days, weeks, month) that drives Auto FTE calculation
+
+**Subtasks**
+- Tasks can be broken into subtasks (open / complete); tracked inside the task detail
+
+**Time logs**
+- Team members log hours against tasks with a date; visible in the task and aggregated in the Analytics tab
+
+**Team tab**
+- Add or remove team members from the project; set Required % and view total FTE per member
+
+**Analytics tab**
+- Financial summary, FTE burn-down, and status breakdown for the project
+
+**Timeline tab**
+- Read-only Gantt showing phases and tasks for this project
+
+**Activity log**
+- Per-project change history
+
+**Mark as Complete**
+- A CheckCircle button in the project list marks a project complete; completed projects are excluded from the overdue task panel on the Dashboard
 
 ---
 
-### 4. Allocating team members
+### 5. Allocating team members
 
 **Route:** `/resources`
 
@@ -66,7 +112,9 @@ Inside a project detail page:
 2. Select a project and a team member
 3. Set FTE% for the allocation period (month is the base unit)
 4. Use the period toggle (Week / Month / Quarter / Half Year / Year) to view allocations across different time horizons
-5. The system derives FTE% automatically from task duration where possible
+5. FTE% can also be derived automatically from task effort and duration
+
+**projectSharePercent:** when adding a member to a project, set the % of the project they own. The system derives their FTE% as: `share × project FTE demand ÷ 100`. This flows into the Bandwidth view.
 
 **Bandwidth thresholds:**
 - Green — below 75%
@@ -76,47 +124,54 @@ Inside a project detail page:
 
 ---
 
-### 5. Monitoring bandwidth
+### 6. Monitoring bandwidth
 
 **Route:** `/bandwidth`
 
 The Bandwidth Overview shows every team member's current load:
 
-- FTE bar per member, colour-coded by status
+- FTE bar per member, colour-coded by status; total FTE = max(task FTE, allocation FTE)
 - Filter by: FTE status (available / approaching / at capacity / overallocated), primary role, search by name
 - Sort by: name, total FTE, remaining capacity, number of projects
 - Drill into a member to see their project breakdown and allocation history
-- Shared simulation links can be reviewed here — managers can revoke shared links
+- Conflict resolution panel appears when a change causes someone to exceed 100% capacity
 
 ---
 
-### 6. Dashboard
+### 7. Dashboard
 
 **Route:** `/`
 
 The dashboard is the daily landing page. It shows:
 
-- **KPI cards** — active projects, total team FTE, overallocated members, upcoming deadlines
+- **KPI cards** — active projects, total team FTE, overallocated members, upcoming deadlines (responsive grid)
 - **Project cards** — status and health at a glance
-- **Unified Gantt** — cross-project timeline with per-member allocation bars (read-only)
-- **Team heatmap** — capacity heat across the team over time
+- **Unified Gantt** — cross-project timeline with per-member allocation bars (read-only); Gantt rows are clickable and navigate to the project
+- **Team heatmap** — capacity heat across the team over time; columns are clickable to filter
 - **Revenue forecast** — project revenue projection (currency-aware, with FX rates)
-- **Overdue resources** — members or tasks flagged as overdue
+- **Overdue resources** — tasks flagged as overdue; clicking an overdue task navigates directly to the project view. Completed projects are excluded.
 - **Activity feed** — recent events from the last 7 days
 
-Both roles can see all projects on the dashboard. Admins have full write access; team members can only write their own time logs, calendar profile, and team member record.
+Both roles can see all projects on the dashboard.
 
 ---
 
-### 7. Insights
+### 8. Insights
 
 **Route:** `/insights`
 
-High-level analytical view across the portfolio. Surfaces patterns in utilization, project health, and team load. Use for planning conversations and reporting.
+High-level analytical view across the portfolio:
+
+- **Demand trends** — 3/6/12-month team FTE curves
+- **Bottleneck overview** — role and skill scarcity (Critical / Active / Emerging / Monitored severity); drill down to see supply/demand bars, affected projects, contributing tasks, and historical 6-month trend lines
+- **Planning insights** — active planning flags (capacity warnings, assignment conflicts, recently applied simulations, template retirement recommendations); flags can be dismissed with a reason
+- **Member utilization trends** — peak FTE by person over time
+- **Monthly digest** — summary snapshots
+- **Simulation templates** — view, apply, or discard saved simulation runs
 
 ---
 
-### 8. What-If Simulation
+### 9. What-If Simulation
 
 **Route:** `/simulation`
 
@@ -126,28 +181,30 @@ Lets managers model allocation changes without affecting live data.
 1. Enter simulation mode (toggle in the Simulation page)
 2. Add steps: add/remove allocations, adjust FTE%, reschedule tasks
 3. Each step is replayed on top of a deep clone of the live data — nothing is saved yet
-4. Review the delta (what changes vs. current state) in the Planning Insights panel
-5. **Share** — generate a share link so stakeholders can review the simulation without edit access
-6. **Apply** — when satisfied, apply all steps to the real data in one action
-7. **Templates** — save a simulation as a personal template for reuse; system also records recent runs
+4. Review the delta vs. current state in the **Planning Insights** panel
+5. **Share** — generate a share link so stakeholders can review without edit access
+6. **Apply** — when satisfied, apply all steps to live data in one action
+7. **Discard** — remove individual steps or reset entirely
+8. **Templates** — save a simulation as a personal template for reuse; system also records recent runs
 
 **Shared simulation review:** `/simulation/review/:shareId`
-Recipients open the link, see the proposed changes, and can approve or flag concerns.
+Recipients open the link and see the proposed changes. No login required.
 
 ---
 
-### 9. Team management
+### 10. Team management
 
 **Route:** `/team`
 
 - View all team members and their roles
-- Edit role and skill assignments inline
+- Edit role and skill assignments inline with the **Role/Skill Inline Editor**
 - Role and skill taxonomy is maintained at the org level (stored in localStorage even when Supabase is active)
 - Role/skill change history is tracked per member
+- Audit trail records who changed what
 
 ---
 
-### 10. Exporting
+### 11. Exporting
 
 Accessible via the **Export panel** on the Dashboard (Gantt export button).
 
@@ -157,40 +214,74 @@ Accessible via the **Export panel** on the Dashboard (Gantt export button).
 
 ---
 
-### 11. Settings
+### 12. Settings
 
 **Route:** `/settings`
 
 - **Calendar profiles** — set per-member working patterns: timezone, working days, daily hours, blackout dates (leave, public holidays). Used by the Scheduling Assistant and FTE calculator to adjust effective availability.
 - **Currency** — set the base currency; FX rates are fetched and refreshed automatically
-- **User switching** — for demo / multi-user testing, switch active user context without logging out
+- **Project templates** — create custom phase templates for reuse across new projects
+- **Role taxonomy** — define and manage org-level role names (e.g. Senior Analyst, PM)
+- **Skill taxonomy** — define and manage org-level skill tags
+- **Notification settings** — configure external notification channels and routing (see Notifications section below)
+- **Dark mode** — toggle light/dark theme
+- **User switching** — only available in localStorage mode (no Supabase). In Supabase mode, use Sign out and log in as a different user.
 
 ---
 
 ## Scheduling Assistant
 
-Surfaces unscheduled tasks and suggests optimal assignment based on current bandwidth and calendar profiles. Configurable review cadence. Shows a health score and emits toast notifications when scheduling issues are detected.
+A slide-in panel (button in the top header) that surfaces unscheduled tasks grouped by project and phase. Users can batch-set phase dates and individual task dates; the panel previews the resulting FTE demand for assigned members. A counter badge on the button shows how many tasks need scheduling. Configurable review cadence determines how often the assistant prompts for a review. Shows a health score and emits toast notifications when scheduling issues are detected.
+
+---
+
+## Conflict Resolution
+
+When a change (adding an allocation or task) causes someone to exceed 100% capacity, a **Conflict Resolution** sheet appears automatically. It shows:
+- Who is overallocated and by how much
+- Which projects are affected, ranked by resolution priority
+- Options to reduce capacity on source/target projects, reassign tasks, or navigate to the Bandwidth page
 
 ---
 
 ## Notifications
 
-The app maintains an in-app notification system. Events (task completion, overallocation, simulation applied, etc.) are logged to an activity feed and surfaced as notifications. Org-level alerts are generated automatically based on configured rules.
+**In-app notifications**
+The notification bell (top header) shows events: task completion, overallocation, simulation applied, deadline approaching, etc. An activity feed on the Dashboard shows the last 7 days of org events.
+
+**Org-level alert engine**
+Automatically generates alerts for overallocation, upcoming deadlines, bottlenecks, and other thresholds. Alerts are written to the `alerts` table and surfaced in the notification center.
+
+**External notifications**
+Configurable in Settings → Notifications. Supported channels:
+- Email
+- Slack
+- Microsoft Teams
+- Push (browser / device)
+
+For each channel, users set:
+- **Routing** — which alert categories and priority levels (Critical / Attention / Info) go to which channel
+- **Quiet hours** — time windows when non-critical notifications are suppressed per channel
+- **Scheduled pause** — recurring windows (e.g. "9 PM – 8 AM weekdays") or one-off pauses (e.g. "until tomorrow 2 PM") where external notifications stop. Critical alerts can be set to override pauses.
+- **Do-Not-Disturb profiles** — named DnD configurations that can be toggled on/off quickly
 
 ---
 
 ## Access control
 
-Row-level security (RLS) is enforced at the database layer for all tables. Role is set on the `users` record and cannot be self-assigned.
+Row-level security (RLS) is enforced at the database layer for all tables. Role is set on the `users` record and cannot be self-assigned. `admin` and `manager` have identical database access.
 
-| What | Admin | Team member |
+| What | Admin / Manager | Member |
 |---|---|---|
 | Create / view / edit / delete projects, phases, tasks, subtasks, allocations | All | All |
-| Log time against tasks | Yes | Own entries only |
-| Edit calendar profile | Yes | Own only |
+| Log time against tasks | All entries | Own entries only |
+| Edit team member record | All | Own only |
+| Edit calendar profile | All | Own only |
+| View user records | All | Own only |
 | Run simulations | Yes | No |
 | View simulation share links | Yes (+ recipients via link) | Via share link only |
 | Export | Yes | No |
+| Delete timelogs / alerts (cascade) | Yes | Yes (required for project/task deletion to cascade correctly) |
 
 Share links (`/simulation/review/:shareId`) are accessible without login — the server validates the token server-side.
 

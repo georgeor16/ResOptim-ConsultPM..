@@ -20,6 +20,7 @@ import Insights from "./pages/Insights";
 import SettingsPage from "./pages/Settings";
 import NewProject from "./pages/NewProject";
 import NotFound from "./pages/NotFound";
+import Login from "./pages/Login";
 
 const queryClient = new QueryClient();
 
@@ -37,24 +38,32 @@ const App = () => (
             }}
           >
             <AuthProvider>
-              <SimulationProvider>
-              <Layout>
               <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/projects" element={<Projects />} />
-                <Route path="/projects/new" element={<NewProject />} />
-                <Route path="/projects/:id" element={<ProjectDetail />} />
-                <Route path="/resources" element={<ResourceAllocation />} />
-                <Route path="/bandwidth" element={<BandwidthOverview />} />
-                <Route path="/insights" element={<Insights />} />
-                <Route path="/simulation" element={<Simulation />} />
+                {/* Public routes — no auth required */}
+                <Route path="/login" element={<Login />} />
                 <Route path="/simulation/review/:shareId" element={<SimulationReview />} />
-                <Route path="/team" element={<Team />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="*" element={<NotFound />} />
+
+                {/* Auth-gated routes */}
+                <Route path="/*" element={
+                  <SimulationProvider>
+                    <Layout>
+                      <Routes>
+                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/projects" element={<Projects />} />
+                        <Route path="/projects/new" element={<NewProject />} />
+                        <Route path="/projects/:id" element={<ProjectDetail />} />
+                        <Route path="/resources" element={<ResourceAllocation />} />
+                        <Route path="/bandwidth" element={<BandwidthOverview />} />
+                        <Route path="/insights" element={<Insights />} />
+                        <Route path="/simulation" element={<Simulation />} />
+                        <Route path="/team" element={<Team />} />
+                        <Route path="/settings" element={<SettingsPage />} />
+                        <Route path="*" element={<NotFound />} />
+                      </Routes>
+                    </Layout>
+                  </SimulationProvider>
+                } />
               </Routes>
-              </Layout>
-              </SimulationProvider>
             </AuthProvider>
           </BrowserRouter>
         </TooltipProvider>

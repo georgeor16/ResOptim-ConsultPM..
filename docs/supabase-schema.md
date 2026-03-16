@@ -10,7 +10,8 @@ _Update this file immediately when any table, column, or relationship changes._
 ### users
 | Column | Type | Notes |
 |---|---|---|
-| id | uuid | Primary key (matches Supabase Auth uid) |
+| id | uuid | Primary key (app-managed — does NOT match Supabase Auth uid) |
+| auth_id | uuid | FK → auth.users(id); used by `get_my_role()` to resolve role from `auth.uid()` (added migration 011) |
 | name | text | Display name |
 | email | text | User email |
 | role | text | `admin`, `manager`, or `member` |
@@ -256,6 +257,7 @@ RLS is enabled on all tables. Three roles: `admin` and `manager` (full access to
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-03-16 | Added auth_id column to users table (migration 011); updated get_my_role() to resolve by auth_id | — |
 | 2026-03-15 | Defined RLS rules for all 13 tables; resolved share link auth pattern (service role key) | — |
 | 2026-03-15 | Added simulations, simulation_templates, scheduling_config tables; added user_id to alerts; updated localStorage section | — |
 | 2026-03-15 | Added phases, tasks, subtasks, timelogs, alerts, users tables; expanded projects/team_members/calendar_profiles columns; fixed calendar_ps typo | — |

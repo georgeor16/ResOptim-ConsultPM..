@@ -192,6 +192,28 @@ Responsibilities:
 
 ---
 
+## Security
+
+### Row-Level Security (RLS)
+RLS is enabled on all Supabase tables. Access is governed by a `get_my_role()` security-definer function that reads `users.role` for the authenticated user.
+
+**Roles:** `admin`, `manager` (identical access — full CRUD on all tables), `member` (full CRUD on projects, phases, tasks, subtasks, allocations; own-row/own-entry access on users, timelogs, alerts).
+
+**Migrations:**
+- `007_rls_role_based_policies.sql` — `get_my_role()` function + initial role-based policies on 8 tables
+- `008_projects_member_full_access.sql` — corrected projects to give members full access
+- `009_phases_tasks_allocations_member_full_access.sql` — corrected phases, tasks, subtasks, allocations to give members full access
+- `010_fix_cascade_delete_rls.sql` — extended timelog/alert delete to all authenticated users (cascade delete fix)
+- `011_add_auth_id_to_users.sql` — added `auth_id uuid` column to `public.users`; updated `get_my_role()` to resolve role via Supabase Auth UID
+
+**Auth integration:** `AuthContext` uses `supabase.auth.getSession()` / `onAuthStateChange()` when Supabase is configured. Falls back to mock auth (localStorage user switching) when Supabase is not configured. A `/login` route (email + password) is the entry point for authenticated sessions. Users are linked via `public.users.auth_id = auth.uid()`.
+
+**Share link auth:** `/simulation/review/:shareId` uses a server-side service role key — no anon RLS policy on the `simulations` table.
+
+See `docs/supabase-schema.md` → RLS Rules for the full per-table policy breakdown.
+
+---
+
 ## Open Decisions
 
 - CSV export: in scope or out? (PDF/PNG/GSlides/GDocs confirmed; CSV unresolved)
@@ -203,6 +225,8 @@ Responsibilities:
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-03-16 | Added Supabase Auth integration: auth_id column, Login page, AuthContext rewrite, Layout redirect, AppSidebar sign-out | — |
+| 2026-03-15 | Added Security section: RLS roles, get_my_role() function, migration references, share link auth pattern | edd8cdf |
 | 2026-03-15 | Confirmed full stack from package.json: added TanStack Query, Recharts, dnd-kit, jsPDF, shadcn/ui, Sonner, Vitest; removed TBD styling entry; pinned versions | — |
 | 2026-03-15 | Corrected frontend stack to React 18 + TypeScript + Vite; added Frontend Tech Stack, Routing, SimulationContext sections; formalised Component Map as table; added simulations/simulation_templates/scheduling_config to table list | — |
 | 2026-03-15 | Added What-If Simulation, Insights, Revenue Forecast, Notifications modules; expanded table list; updated data flow with simulation layer; resolved export format decision | — |
