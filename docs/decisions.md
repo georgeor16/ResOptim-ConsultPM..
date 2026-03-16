@@ -41,6 +41,13 @@ _Log every meaningful architectural or product decision here. Include tradeoffs.
 - **Tradeoffs:** Adds an abstraction layer; queries must be invalidated explicitly after mutations or data can go stale
 - **Alternatives considered:** Raw Supabase JS client calls in components — rejected (no caching, verbose loading state boilerplate)
 
+### Manager role gets admin-level RLS access
+- **Date:** 2026-03-15
+- **What:** The `manager` role is treated identically to `admin` in all RLS policies — full SELECT/INSERT/UPDATE/DELETE on all tables
+- **Why:** Managers run core PM workflows (creating projects, allocating team, running simulations); restricting them to member-level access would break the app for them
+- **Tradeoffs:** `manager` and `admin` are functionally identical at the database layer; any future distinction between them would require a migration
+- **Alternatives considered:** Treating manager as member-level — rejected as it would block managers from creating and editing projects
+
 ### RLS member visibility scope
 - **Date:** 2026-03-15
 - **What:** Members can SELECT all rows in projects, phases, tasks, subtasks, allocations, timelogs; write access restricted to own data only

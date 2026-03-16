@@ -16,7 +16,7 @@ An internal platform for the Mind the Bridge consulting team to manage projects,
 | Role | What they can do |
 |---|---|
 | **Admin / Manager** | Full access: create projects, allocate team, view all data, run simulations, export |
-| **Team member** | Read all project and allocation data; write own time logs, calendar profile, and team member record only |
+| **Team member** | Full access to projects, phases, tasks, subtasks, and allocations; write own time logs, calendar profile, and team member record |
 
 Role is set per user and determines what pages and data are visible.
 
@@ -185,8 +185,7 @@ Row-level security (RLS) is enforced at the database layer for all tables. Role 
 
 | What | Admin | Team member |
 |---|---|---|
-| View projects, phases, tasks, allocations | All | All (read-only) |
-| Create / edit projects, phases, tasks, allocations | Yes | No |
+| Create / view / edit / delete projects, phases, tasks, subtasks, allocations | All | All |
 | Log time against tasks | Yes | Own entries only |
 | Edit calendar profile | Yes | Own only |
 | Run simulations | Yes | No |

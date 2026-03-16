@@ -13,7 +13,7 @@ _Update this file immediately when any table, column, or relationship changes._
 | id | uuid | Primary key (matches Supabase Auth uid) |
 | name | text | Display name |
 | email | text | User email |
-| role | text | `admin` or `member` |
+| role | text | `admin`, `manager`, or `member` |
 | created_at | timestamp | Auto-generated |
 
 ### projects
@@ -44,7 +44,7 @@ _Update this file immediately when any table, column, or relationship changes._
 |---|---|---|
 | id | uuid | Primary key |
 | project_id | uuid | FK → projects |
-| member_id | uuid | FK → team_members |
+| user_id | uuid | FK → users |
 | fte_percentage | numeric | Allocated FTE% |
 | start_date | date | Allocation start |
 | end_date | date | Allocation end |
@@ -87,7 +87,7 @@ _Update this file immediately when any table, column, or relationship changes._
 |---|---|---|
 | id | uuid | Primary key |
 | task_id | uuid | FK → tasks |
-| member_id | uuid | FK → team_members |
+| user_id | uuid | FK → users |
 | hours | numeric | Hours logged |
 | logged_date | date | Date of log entry |
 | created_at | timestamp | Auto-generated |
@@ -184,15 +184,19 @@ Org-level taxonomy data is always stored in localStorage, even when Supabase is 
 
 ## RLS Rules
 
-RLS is enabled on all tables. Two roles: `admin` (full access to all tables) and `member` (per-table rules below).
+RLS is enabled on all tables. Three roles: `admin` and `manager` (full access to all tables) and `member` (per-table rules below).
 
-**Determining role:** The app reads `users.role` for the authenticated user (`auth.uid()`).
+**Determining role:** A `get_my_role()` security-definer function reads `users.role` for `auth.uid()`. Implemented in migration 007.
 
-### `projects`, `phases`, `tasks`, `subtasks`, `allocations`
+### `projects`
 | Operation | Admin | Member |
 |---|---|---|
-| SELECT | All rows | All rows |
-| INSERT / UPDATE / DELETE | Allowed | Denied |
+| SELECT / INSERT / UPDATE / DELETE | All rows | All rows |
+
+### `phases`, `tasks`, `subtasks`, `allocations`
+| Operation | Admin | Member |
+|---|---|---|
+| SELECT / INSERT / UPDATE / DELETE | All rows | All rows |
 
 ### `team_members`
 | Operation | Admin | Member |
@@ -212,12 +216,12 @@ RLS is enabled on all tables. Two roles: `admin` (full access to all tables) and
 | Operation | Admin | Member |
 |---|---|---|
 | SELECT | All rows | All rows |
-| INSERT / UPDATE / DELETE | Allowed | Own rows only (`member_id = auth.uid()`) |
+| INSERT / UPDATE / DELETE | Allowed | Own rows only (`user_id = auth.uid()`) |
 
 ### `calendar_profiles`
 | Operation | Admin | Member |
 |---|---|---|
-| SELECT | All rows | Own row only (`member_id = auth.uid()`) |
+| SELECT | All rows | Own row only (`user_id = auth.uid()`) |
 | INSERT / UPDATE | Allowed | Own row only |
 | DELETE | Allowed | Denied |
 
