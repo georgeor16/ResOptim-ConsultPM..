@@ -16,7 +16,7 @@ An internal platform for the Mind the Bridge consulting team to manage projects,
 | Role | What they can do |
 |---|---|
 | **Admin / Manager** | Full access: create projects, allocate team, view all data, run simulations, export |
-| **Team member** | View their own allocations, tasks assigned to them, and bandwidth status |
+| **Team member** | Read all project and allocation data; write own time logs, calendar profile, and team member record only |
 
 Role is set per user and determines what pages and data are visible.
 
@@ -104,7 +104,7 @@ The dashboard is the daily landing page. It shows:
 - **Overdue resources** — members or tasks flagged as overdue
 - **Activity feed** — recent events from the last 7 days
 
-Managers see all projects; team members see only projects they are allocated to or assigned tasks on.
+Both roles can see all projects on the dashboard. Admins have full write access; team members can only write their own time logs, calendar profile, and team member record.
 
 ---
 
@@ -176,6 +176,24 @@ Surfaces unscheduled tasks and suggests optimal assignment based on current band
 ## Notifications
 
 The app maintains an in-app notification system. Events (task completion, overallocation, simulation applied, etc.) are logged to an activity feed and surfaced as notifications. Org-level alerts are generated automatically based on configured rules.
+
+---
+
+## Access control
+
+Row-level security (RLS) is enforced at the database layer for all tables. Role is set on the `users` record and cannot be self-assigned.
+
+| What | Admin | Team member |
+|---|---|---|
+| View projects, phases, tasks, allocations | All | All (read-only) |
+| Create / edit projects, phases, tasks, allocations | Yes | No |
+| Log time against tasks | Yes | Own entries only |
+| Edit calendar profile | Yes | Own only |
+| Run simulations | Yes | No |
+| View simulation share links | Yes (+ recipients via link) | Via share link only |
+| Export | Yes | No |
+
+Share links (`/simulation/review/:shareId`) are accessible without login — the server validates the token server-side.
 
 ---
 

@@ -34,6 +34,13 @@ _Log every meaningful architectural or product decision here. Include tradeoffs.
 
 ---
 
+### TanStack Query v5 as server state layer
+- **Date:** 2026-03-15
+- **What:** Data fetching uses TanStack Query (`@tanstack/react-query` v5) on top of the Supabase JS client, not raw Supabase calls directly in components
+- **Why:** Provides caching, background refetch, loading/error states, and query invalidation without manual state management; keeps components clean
+- **Tradeoffs:** Adds an abstraction layer; queries must be invalidated explicitly after mutations or data can go stale
+- **Alternatives considered:** Raw Supabase JS client calls in components — rejected (no caching, verbose loading state boilerplate)
+
 ### RLS member visibility scope
 - **Date:** 2026-03-15
 - **What:** Members can SELECT all rows in projects, phases, tasks, subtasks, allocations, timelogs; write access restricted to own data only

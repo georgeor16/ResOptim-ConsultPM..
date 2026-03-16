@@ -128,13 +128,20 @@ Claude Code (Cursor) --> Git Repository --> Notion (via GitHub Action)
 
 | Concern | Implementation |
 |---|---|
-| Framework | React 18 |
-| Language | TypeScript |
-| Build tool | Vite |
-| Routing | React Router (client-side, SPA) |
+| Framework | React 18 (`react` ^18.3.1) |
+| Language | TypeScript (`typescript` ^5.8.3) |
+| Build tool | Vite 5 (`vite` ^5.4.19) |
+| Routing | React Router v6 (`react-router-dom` ^6.30.1) |
+| Styling | Tailwind CSS + shadcn/ui (Radix UI + `class-variance-authority`) |
 | State — simulation | SimulationContext (React Context) |
-| Styling | TBD |
-| Data fetching | Supabase JS client; localStorage fallback |
+| State — server | TanStack Query v5 (`@tanstack/react-query` ^5.83.0) |
+| Data fetching | Supabase JS client (`@supabase/supabase-js` ^2.98.0) |
+| Charts | Recharts (`recharts` ^2.15.4) |
+| Drag and drop | dnd-kit (`@dnd-kit/core`, sortable, utilities) |
+| PDF / PNG export | jsPDF + html2canvas |
+| Forms | react-hook-form + Zod |
+| Notifications (toast) | Sonner (`sonner` ^1.7.4) |
+| Testing | Vitest + Testing Library |
 
 ---
 
@@ -196,6 +203,7 @@ Responsibilities:
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-03-15 | Confirmed full stack from package.json: added TanStack Query, Recharts, dnd-kit, jsPDF, shadcn/ui, Sonner, Vitest; removed TBD styling entry; pinned versions | — |
 | 2026-03-15 | Corrected frontend stack to React 18 + TypeScript + Vite; added Frontend Tech Stack, Routing, SimulationContext sections; formalised Component Map as table; added simulations/simulation_templates/scheduling_config to table list | — |
 | 2026-03-15 | Added What-If Simulation, Insights, Revenue Forecast, Notifications modules; expanded table list; updated data flow with simulation layer; resolved export format decision | — |
 | 2026-03-13 | Initial architecture doc generated | — |
