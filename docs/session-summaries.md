@@ -4,6 +4,23 @@ _Paste end-of-session summaries here. Most recent at the top._
 
 ---
 
+## Session — 2026-03-19 (Google Export)
+
+- **Built:** Google Slides + Google Docs export integration — full OAuth 2.0 flow server-side via Supabase Edge Functions; refresh tokens never touch the client
+- **New files:**
+  - `supabase/migrations/013_google_oauth_tokens.sql` — `user_google_tokens` table + RLS (per-user, own row only)
+  - `supabase/functions/google-oauth/index.ts` — Edge Function handling `auth_url`, `exchange`, `refresh`, `revoke` actions
+  - `supabase/functions/google-export/index.ts` — Edge Function calling Slides/Docs/Drive APIs; auto-refreshes token if within 60s of expiry
+  - `src/lib/googleAuth.ts` — frontend OAuth helpers (initiate redirect, callback handler, connection status, revoke)
+  - `src/lib/ganttExportGoogle.ts` — `exportGanttToSlides`, `exportGanttToDocs`, `buildExportTableData` (chart PNG + allocation table)
+- **Changed:** `GanttExportPanel.tsx` — replaced stub alert with real Connect/Disconnect flow, shows connected Google email, wires up Slides/Docs export with error display
+- **Decisions made:** Server-side OAuth exchange (keeps refresh tokens off client); export content = chart screenshot + FTE allocation table (member, project, FTE%, period)
+- **On hold:** GCP project creation + Supabase secrets + migration push + Edge Function deploy — full step-by-step guide at `docs/google-export-setup.md`
+- **Open questions:** CSV export still unresolved
+- **Next session:** Run deployment steps from `docs/google-export-setup.md` and smoke-test end-to-end
+
+---
+
 ## Session — 2026-03-19
 
 - **Built:** Gantt bandwidth overlay toggle — per-member FTE bands rendered as coloured month-level sub-rows below each project bar (green < 75%, amber 75–89%, orange 90–99%, red ≥ 100%); hover tooltip shows member name, month, FTE%, and committed hours

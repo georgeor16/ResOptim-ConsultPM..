@@ -1,6 +1,6 @@
 # Supabase Schema — MtB PM Tool
 
-_Last updated: 2026-03-15_
+_Last updated: 2026-03-19_
 _Update this file immediately when any table, column, or relationship changes._
 
 ---
@@ -169,6 +169,20 @@ Stores Scheduling Assistant review cadence per user (or org-wide when `user_id` 
 - `users` → `scheduling_config` (one to one, optional)
 - `users` → `alerts` via `user_id` (one to many)
 
+### user_google_tokens
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | Primary key |
+| user_id | uuid | FK → auth.users(id), ON DELETE CASCADE, UNIQUE |
+| access_token | text | Google OAuth access token |
+| refresh_token | text | Google OAuth refresh token (never sent to client) |
+| expires_at | timestamptz | Access token expiry; auto-refreshed within 60s by `google-export` Edge Function |
+| email | text | Connected Google account email |
+| created_at | timestamptz | Auto |
+| updated_at | timestamptz | Auto-updated via trigger `trg_google_tokens_updated_at` |
+
+**RLS:** `users can manage own google tokens` — all operations scoped to `auth.uid() = user_id`. Added migration 013.
+
 ---
 
 ## localStorage (not Supabase)
@@ -247,12 +261,18 @@ RLS is enabled on all tables. Three roles: `admin` and `manager` (full access to
 | INSERT / UPDATE | Allowed | Own row only (`user_id = auth.uid()`) |
 | DELETE | Allowed | Denied |
 
+### `user_google_tokens`
+| Operation | All authenticated users |
+|---|---|
+| SELECT / INSERT / UPDATE / DELETE | Own row only (`user_id = auth.uid()`) |
+
 ---
 
 ## Changelog
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-03-19 | Migration 013: user_google_tokens table for Google OAuth token storage (Slides/Docs export) | — |
 | 2026-03-16 | Migration 012: member full access on users, timelogs, alerts — all three tables now identical to admin/manager | — |
 | 2026-03-16 | Added auth_id column to users table (migration 011); updated get_my_role() to resolve by auth_id | — |
 | 2026-03-15 | Defined RLS rules for all 13 tables; resolved share link auth pattern (service role key) | — |

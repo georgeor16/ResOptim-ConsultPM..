@@ -115,9 +115,11 @@ Claude Code (Cursor) --> Git Repository --> Notion (via GitHub Action)
 - Used by Scheduling Assistant and FTE calculator to adjust effective availability
 
 ### Export
-- Formats: PDF, PNG, Google Slides, Google Docs
-- Granular filters on what to include
-- Captures current state of the Gantt view
+- Formats: PDF, PNG, Google Slides, Google Docs (all implemented)
+- Granular filters: time period, projects, team members, clients, content toggles
+- PDF/PNG: captured via html2canvas + jsPDF directly in the browser
+- Google Slides/Docs: chart screenshot + allocation table sent to `google-export` Edge Function, which calls the Google Slides/Docs/Drive APIs
+- OAuth: server-side via `google-oauth` Edge Function; refresh tokens stored in `user_google_tokens` (never on client)
 
 ### Revenue Forecast
 - Project revenue projection on the dashboard
@@ -140,6 +142,7 @@ Claude Code (Cursor) --> Git Repository --> Notion (via GitHub Action)
 | Charts | Recharts (`recharts` ^2.15.4) |
 | Drag and drop | dnd-kit (`@dnd-kit/core`, sortable, utilities) |
 | PDF / PNG export | jsPDF + html2canvas |
+| Google Slides / Docs export | Google Slides API, Google Docs API, Google Drive API (via Supabase Edge Functions) |
 | Forms | react-hook-form + Zod |
 | Notifications (toast) | Sonner (`sonner` ^1.7.4) |
 | Testing | Vitest + Testing Library |
@@ -226,6 +229,7 @@ See `docs/supabase-schema.md` → RLS Rules for the full per-table policy breakd
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-03-19 | Export: Google Slides + Google Docs integration — server-side OAuth via Edge Functions, user_google_tokens table (migration 013), chart screenshot + allocation table export | — |
 | 2026-03-19 | Gantt: bandwidth overlay toggle (per-member FTE bands) + Supabase realtime subscription on tasks + allocations | — |
 | 2026-03-16 | Removed all member access restrictions: migration 012 + 11 frontend files updated; all roles now identical | — |
 | 2026-03-16 | Added Supabase Auth integration: auth_id column, Login page, AuthContext rewrite, Layout redirect, AppSidebar sign-out | — |

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -21,8 +21,17 @@ import {
   type ExportFormat,
   type TimePreset,
 } from '@/lib/ganttExport';
+import {
+  getGoogleConnectionStatus,
+  initiateGoogleOAuth,
+  revokeGoogleConnection,
+  isGoogleOAuthCallback,
+  getOAuthCodeFromUrl,
+  handleGoogleOAuthCallback,
+} from '@/lib/googleAuth';
+import { exportGanttToSlides, exportGanttToDocs } from '@/lib/ganttExportGoogle';
 import type { AppData } from '@/lib/types';
-import { FileDown, Loader2 } from 'lucide-react';
+import { FileDown, Loader2, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface GanttExportPanelProps {
@@ -35,6 +44,7 @@ interface GanttExportPanelProps {
   chartRef: React.RefObject<HTMLElement | null>;
   onExportPdf: (blob: Blob, filename: string) => void;
   onExportPng: (blob: Blob, filename: string) => void;
+  onExportGoogleUrl?: (url: string) => void;
 }
 
 export function GanttExportPanel({
@@ -47,18 +57,50 @@ export function GanttExportPanel({
   chartRef,
   onExportPdf,
   onExportPng,
+  onExportGoogleUrl,
 }: GanttExportPanelProps) {
   const [config, setConfig] = useState<GanttExportConfig>(loadGanttExportConfig);
   const [exporting, setExporting] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(false);
+  const [googleEmail, setGoogleEmail] = useState<string | null>(null);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+
+  const refreshGoogleStatus = useCallback(async () => {
+    const status = await getGoogleConnectionStatus();
+    setGoogleConnected(status.connected);
+    setGoogleEmail(status.email);
+  }, []);
 
   useEffect(() => {
-    if (open) setConfig(loadGanttExportConfig());
+    if (open) {
+      setConfig(loadGanttExportConfig());
+      setGoogleError(null);
+    }
   }, [open]);
 
   useEffect(() => {
     saveGanttExportConfig(config);
   }, [config]);
+
+  // Handle Google OAuth callback redirect (code in URL)
+  useEffect(() => {
+    if (!isGoogleOAuthCallback()) return;
+    const code = getOAuthCodeFromUrl();
+    if (!code) return;
+    // Remove ?code= from URL without navigating
+    const url = new URL(window.location.href);
+    url.searchParams.delete('code');
+    url.searchParams.delete('scope');
+    window.history.replaceState({}, '', url.toString());
+    handleGoogleOAuthCallback(code)
+      .then(() => refreshGoogleStatus())
+      .catch(e => setGoogleError(e instanceof Error ? e.message : 'OAuth failed'));
+  }, [refreshGoogleStatus]);
+
+  // Load Google connection status on mount
+  useEffect(() => {
+    refreshGoogleStatus();
+  }, [refreshGoogleStatus]);
 
   const activeProjects = data.projects.filter(p => p.status === 'Active');
   const clients = Array.from(new Set(activeProjects.map(p => p.client))).sort();
@@ -88,6 +130,7 @@ export function GanttExportPanel({
   const selectAllClients = () => setConfig(c => ({ ...c, clientNames: [...clients] }));
 
   const handleExport = async () => {
+    setGoogleError(null);
     if (config.format === 'pdf' || config.format === 'png') {
       setExporting(true);
       try {
@@ -109,9 +152,25 @@ export function GanttExportPanel({
       } finally {
         setExporting(false);
       }
-    } else {
-      // Google Slides / Docs: show stub message
-      alert('Google Slides and Google Docs export requires OAuth setup. Configure your Google Cloud project and add the integration in Settings.');
+    } else if (config.format === 'google_slides' || config.format === 'google_docs') {
+      if (!googleConnected) {
+        setGoogleError('Connect your Google account first.');
+        return;
+      }
+      if (!chartRef.current) return;
+      setExporting(true);
+      try {
+        const result = config.format === 'google_slides'
+          ? await exportGanttToSlides(chartRef.current, config, data, exportTitle, singleProjectId)
+          : await exportGanttToDocs(chartRef.current, config, data, exportTitle, singleProjectId);
+        onExportGoogleUrl?.(result.url);
+        window.open(result.url, '_blank', 'noopener,noreferrer');
+        onOpenChange(false);
+      } catch (e) {
+        setGoogleError(e instanceof Error ? e.message : 'Export failed');
+      } finally {
+        setExporting(false);
+      }
     }
   };
 
@@ -287,11 +346,37 @@ export function GanttExportPanel({
                   {config.format === 'google_slides' ? 'Google Slides' : 'Google Docs'}
                 </Label>
                 {!googleConnected ? (
-                  <Button variant="outline" size="sm" className="w-full" onClick={() => setGoogleConnected(true)}>
-                    Connect Google Account
-                  </Button>
+                  <div className="space-y-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => initiateGoogleOAuth().catch(e => setGoogleError(e.message))}
+                    >
+                      Connect Google Account
+                    </Button>
+                    {googleError && (
+                      <p className="text-xs text-destructive">{googleError}</p>
+                    )}
+                  </div>
                 ) : (
                   <>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="truncate">{googleEmail ?? 'Connected'}</span>
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 text-destructive hover:underline ml-2 shrink-0"
+                        onClick={() =>
+                          revokeGoogleConnection().then(() => {
+                            setGoogleConnected(false);
+                            setGoogleEmail(null);
+                          })
+                        }
+                      >
+                        <LogOut className="h-3 w-3" />
+                        Disconnect
+                      </button>
+                    </div>
                     <label className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Create new</span>
                       <Switch
@@ -301,11 +386,14 @@ export function GanttExportPanel({
                     </label>
                     {!config.googleCreateNew && (
                       <Input
-                        placeholder="Search or paste document ID"
+                        placeholder="Paste document / presentation ID"
                         value={config.googleExistingId}
                         onChange={e => setConfig(c => ({ ...c, googleExistingId: e.target.value }))}
                         className="h-8 text-xs"
                       />
+                    )}
+                    {googleError && (
+                      <p className="text-xs text-destructive">{googleError}</p>
                     )}
                   </>
                 )}

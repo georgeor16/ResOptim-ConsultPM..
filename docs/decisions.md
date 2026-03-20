@@ -1,6 +1,6 @@
 # Decision Log — MtB PM Tool
 
-_Last updated: 2026-03-16_
+_Last updated: 2026-03-19_
 _Log every meaningful architectural or product decision here. Include tradeoffs._
 
 ---
@@ -95,6 +95,15 @@ _Log every meaningful architectural or product decision here. Include tradeoffs.
 - **Why:** Both tables directly affect what the Gantt renders — task dates drive bar positions, allocations drive the bandwidth overlay. Subscribing to all tables would cause unnecessary re-renders from unrelated changes (e.g. timelogs, alerts).
 - **Tradeoffs:** Project date changes (edits to `projects` table) do not auto-refresh the Gantt; the existing `location.pathname` effect in Dashboard covers this when the user navigates back to the dashboard.
 - **Alternatives considered:** Subscribe to all tables — rejected (too noisy); subscribe to tasks only — rejected, allocation changes affect bandwidth overlay which is a core part of the feature.
+
+---
+
+### Google export OAuth: server-side Edge Function, not client PKCE
+- **Date:** 2026-03-19
+- **What:** Google OAuth exchange and token storage happen in a Supabase Edge Function (`google-oauth`), not directly in the browser. Refresh tokens are stored in a `user_google_tokens` table (RLS-scoped) and never sent to the client. All Slides/Docs API calls are proxied through a second Edge Function (`google-export`).
+- **Why:** Keeping refresh tokens server-side prevents token theft via XSS. The `google-export` function auto-refreshes expired tokens before calling the Google API, so the client never needs to manage token lifecycle.
+- **Tradeoffs:** Two extra Edge Functions to deploy and maintain; Google API rate limit errors surface as Edge Function 502 responses. Token refresh is synchronous-in-line which adds ~200ms latency when a refresh is needed.
+- **Alternatives considered:** Client-side PKCE with tokens in localStorage — rejected (tokens exposed to XSS); client-side PKCE with tokens in Supabase — rejected (client still handles the exchange, refresh token written from client context which is avoidable)
 
 ---
 
