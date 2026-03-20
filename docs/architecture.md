@@ -92,7 +92,8 @@ Claude Code (Cursor) --> Git Repository --> Notion (via GitHub Action)
 - Read-only — editing happens in task management views, not the Gantt
 - Project-level and aggregated dashboard views
 - Driven by project/phase/task dates in Supabase
-- Bandwidth overlay toggle per member
+- **Bandwidth overlay toggle** — per-member FTE bands, coloured by utilisation threshold, rendered below each project bar
+- **Real-time updates** — Supabase channel `gantt-live` subscribes to `tasks` and `allocations`; any change triggers a `loadData()` refresh via `onDataRefresh` callback
 
 ### Scheduling Assistant
 - Surfaces unscheduled tasks and suggests optimal assignment
@@ -218,7 +219,6 @@ See `docs/supabase-schema.md` → RLS Rules for the full per-table policy breakd
 ## Open Decisions
 
 - CSV export: in scope or out? (PDF/PNG/GSlides/GDocs confirmed; CSV unresolved)
-- Real-time updates: Supabase realtime subscriptions not yet in scope
 
 ---
 
@@ -226,6 +226,7 @@ See `docs/supabase-schema.md` → RLS Rules for the full per-table policy breakd
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-03-19 | Gantt: bandwidth overlay toggle (per-member FTE bands) + Supabase realtime subscription on tasks + allocations | — |
 | 2026-03-16 | Removed all member access restrictions: migration 012 + 11 frontend files updated; all roles now identical | — |
 | 2026-03-16 | Added Supabase Auth integration: auth_id column, Login page, AuthContext rewrite, Layout redirect, AppSidebar sign-out | — |
 | 2026-03-15 | Added Security section: RLS roles, get_my_role() function, migration references, share link auth pattern | edd8cdf |

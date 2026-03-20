@@ -1,5 +1,5 @@
 import { loadData } from '@/lib/store';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -26,10 +26,14 @@ export default function Dashboard() {
   const [exportPanelOpen, setExportPanelOpen] = useState(false);
   const ganttChartRef = useRef<HTMLElement | null>(null);
 
+  const refreshData = useCallback(() => {
+    loadData().then(setData);
+  }, []);
+
   // Refetch when landing on dashboard so Gantt and all widgets stay in sync with changes
   useEffect(() => {
-    loadData().then(setData);
-  }, [location.pathname]);
+    refreshData();
+  }, [location.pathname, refreshData]);
   useEffect(() => {
     refreshFxRates().then(setRates);
   }, []);
@@ -99,6 +103,7 @@ export default function Dashboard() {
             data={data}
             chartRef={ganttChartRef}
             onExportClick={() => setExportPanelOpen(true)}
+            onDataRefresh={refreshData}
           />
           <GanttExportPanel
             open={exportPanelOpen}

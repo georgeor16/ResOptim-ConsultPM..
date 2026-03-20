@@ -89,6 +89,15 @@ _Log every meaningful architectural or product decision here. Include tradeoffs.
 
 ---
 
+### Gantt real-time subscription scope: tasks + allocations only
+- **Date:** 2026-03-19
+- **What:** Gantt uses a single Supabase realtime channel (`gantt-live`) subscribed to `postgres_changes` on `tasks` and `allocations`. Any change to either table calls `onDataRefresh` which re-runs `loadData()`.
+- **Why:** Both tables directly affect what the Gantt renders — task dates drive bar positions, allocations drive the bandwidth overlay. Subscribing to all tables would cause unnecessary re-renders from unrelated changes (e.g. timelogs, alerts).
+- **Tradeoffs:** Project date changes (edits to `projects` table) do not auto-refresh the Gantt; the existing `location.pathname` effect in Dashboard covers this when the user navigates back to the dashboard.
+- **Alternatives considered:** Subscribe to all tables — rejected (too noisy); subscribe to tasks only — rejected, allocation changes affect bandwidth overlay which is a core part of the feature.
+
+---
+
 ### Simulation share link auth pattern
 - **Date:** 2026-03-15
 - **What:** Share link reads (`/simulation/review/:shareId`) bypass RLS via a server-side service role key, not an anon Supabase policy

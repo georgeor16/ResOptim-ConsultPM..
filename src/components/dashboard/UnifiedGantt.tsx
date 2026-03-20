@@ -1,15 +1,18 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { AppData } from '@/lib/types';
-import { FileDown } from 'lucide-react';
+import { FileDown, Activity } from 'lucide-react';
+import { getMemberSlotFtes, type SlotFte } from '@/lib/bandwidth';
+import { getBandwidthStatus } from '@/lib/fte';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 interface Props {
   data: AppData;
   chartRef?: React.RefObject<HTMLElement | null>;
   onExportClick?: () => void;
+  onDataRefresh?: () => void;
 }
 
 const STATUS_COLORS: Record<string, { bg: string; border: string; label: string }> = {
@@ -24,11 +27,44 @@ const PRIORITY_PATTERNS: Record<string, string> = {
   Low: 'border-l-4 border-l-priority-low',
 };
 
-export default function UnifiedGantt({ data, chartRef, onExportClick }: Props) {
+const BANDWIDTH_COLORS: Record<string, string> = {
+  available: 'bg-green-500/50',
+  approaching: 'bg-amber-500/60',
+  full: 'bg-orange-500/60',
+  overallocated: 'bg-red-500/70',
+};
+
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export default function UnifiedGantt({ data, chartRef, onExportClick, onDataRefresh }: Props) {
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [bandwidthOverlay, setBandwidthOverlay] = useState(false);
 
-  const { months, timelineStart, totalDays, projects } = useMemo(() => {
+  // Stable ref so the subscription effect never needs to re-subscribe when onDataRefresh changes
+  const onDataRefreshRef = useRef(onDataRefresh);
+  useEffect(() => {
+    onDataRefreshRef.current = onDataRefresh;
+  });
+
+  // Supabase real-time subscription for tasks + allocations
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+    const channel = supabase
+      .channel('gantt-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        onDataRefreshRef.current?.();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'allocations' }, () => {
+        onDataRefreshRef.current?.();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const { months, timelineStart, timelineStartStr, timelineEndStr, totalDays, projects } = useMemo(() => {
     const now = new Date();
     // Start from earliest project or 2 months ago, whichever is earlier
     let earliest = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -69,8 +105,24 @@ export default function UnifiedGantt({ data, chartRef, onExportClick }: Props) {
       return a.startDate.localeCompare(b.startDate);
     });
 
-    return { months, timelineStart, totalDays, projects };
+    return { months, timelineStart, timelineStartStr: toDateStr(timelineStart), timelineEndStr: toDateStr(timelineEnd), totalDays, projects };
   }, [data]);
+
+  // Pre-compute per-member per-month FTE for all projects when overlay is on
+  const memberSlotFtes = useMemo(() => {
+    if (!bandwidthOverlay) return null;
+    const result: Record<string, { user: (typeof data.users)[0]; slots: SlotFte[] }[]> = {};
+    for (const project of projects) {
+      const allocatedUsers = data.users.filter(u =>
+        data.allocations.some(a => a.projectId === project.id && a.userId === u.id)
+      );
+      result[project.id] = allocatedUsers.map(user => ({
+        user,
+        slots: getMemberSlotFtes(data, user, 'month', timelineStartStr, timelineEndStr),
+      }));
+    }
+    return result;
+  }, [bandwidthOverlay, data, projects, timelineStartStr, timelineEndStr]);
 
   const getBarStyle = (startDate: string, endDate: string) => {
     const s = new Date(startDate);
@@ -106,7 +158,7 @@ export default function UnifiedGantt({ data, chartRef, onExportClick }: Props) {
           )}
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-foreground text-sm">Project Timeline</h3>
-          {/* Legend */}
+          {/* Legend + bandwidth toggle */}
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-3 text-xs">
               <span className="text-muted-foreground font-medium">Status:</span>
@@ -138,6 +190,29 @@ export default function UnifiedGantt({ data, chartRef, onExportClick }: Props) {
               <span className="h-4 w-px bg-danger" />
               <span className="text-muted-foreground">Today</span>
             </div>
+            <div className="h-3 border-l border-border" />
+            {/* Bandwidth overlay toggle */}
+            <button
+              type="button"
+              onClick={() => setBandwidthOverlay(v => !v)}
+              className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border transition-colors ${
+                bandwidthOverlay
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-border text-muted-foreground hover:text-foreground hover:border-border/80'
+              }`}
+              aria-pressed={bandwidthOverlay}
+            >
+              <Activity className="h-3 w-3" />
+              Bandwidth
+            </button>
+            {bandwidthOverlay && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="h-2 w-3 rounded-sm bg-green-500/50" /><span className="text-muted-foreground">&lt;75%</span>
+                <span className="h-2 w-3 rounded-sm bg-amber-500/60" /><span className="text-muted-foreground">75–89%</span>
+                <span className="h-2 w-3 rounded-sm bg-orange-500/60" /><span className="text-muted-foreground">90–99%</span>
+                <span className="h-2 w-3 rounded-sm bg-red-500/70" /><span className="text-muted-foreground">≥100%</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -167,39 +242,74 @@ export default function UnifiedGantt({ data, chartRef, onExportClick }: Props) {
                 const progress = tasks.length > 0 ? Math.round((doneTasks / tasks.length) * 100) : 0;
                 const color = STATUS_COLORS[project.status] || STATUS_COLORS.Active;
                 const barStyle = getBarStyle(project.startDate, project.endDate);
+                const projectMembers = memberSlotFtes?.[project.id] ?? [];
 
                 return (
-                  <div key={project.id} className="flex items-center group hover:bg-muted/30 rounded-sm cursor-pointer" onClick={() => navigate(`/projects/${project.id}`)}>
-                    <div className="w-[180px] shrink-0 py-1.5 pr-3">
-                      <p className="text-xs font-medium text-foreground truncate">{project.name}</p>
-                      <p className="text-[10px] text-muted-foreground truncate">{project.client}</p>
-                    </div>
-                    <div className="flex-1 relative h-8">
-                      {/* Today line */}
-                      <div
-                        className="absolute top-0 bottom-0 w-px bg-danger/60 z-10"
-                        style={{ left: `${todayOffset}%` }}
-                      />
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div
-                            className={`absolute top-1 h-6 rounded-sm ${color.bg} opacity-80 hover:opacity-100 transition-opacity cursor-default ${PRIORITY_PATTERNS[project.priority] || ''}`}
-                            style={barStyle}
-                          >
-                            {/* Progress fill */}
+                  <div key={project.id}>
+                    {/* Project bar row */}
+                    <div className="flex items-center group hover:bg-muted/30 rounded-sm cursor-pointer" onClick={() => navigate(`/projects/${project.id}`)}>
+                      <div className="w-[180px] shrink-0 py-1.5 pr-3">
+                        <p className="text-xs font-medium text-foreground truncate">{project.name}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{project.client}</p>
+                      </div>
+                      <div className="flex-1 relative h-8">
+                        {/* Today line */}
+                        <div
+                          className="absolute top-0 bottom-0 w-px bg-danger/60 z-10"
+                          style={{ left: `${todayOffset}%` }}
+                        />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
                             <div
-                              className="h-full rounded-sm bg-foreground/10"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="text-xs">
-                          <p className="font-medium">{project.name}</p>
-                          <p className="text-muted-foreground">{project.startDate} → {project.endDate}</p>
-                          <p>{progress}% complete · {doneTasks}/{tasks.length} tasks</p>
-                        </TooltipContent>
-                      </Tooltip>
+                              className={`absolute top-1 h-6 rounded-sm ${color.bg} opacity-80 hover:opacity-100 transition-opacity cursor-default ${PRIORITY_PATTERNS[project.priority] || ''}`}
+                              style={barStyle}
+                            >
+                              {/* Progress fill */}
+                              <div
+                                className="h-full rounded-sm bg-foreground/10"
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">
+                            <p className="font-medium">{project.name}</p>
+                            <p className="text-muted-foreground">{project.startDate} → {project.endDate}</p>
+                            <p>{progress}% complete · {doneTasks}/{tasks.length} tasks</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
                     </div>
+
+                    {/* Bandwidth overlay: per-member FTE bands */}
+                    {bandwidthOverlay && projectMembers.map(({ user, slots }) => (
+                      <div key={user.id} className="flex items-center">
+                        <div className="w-[180px] shrink-0 py-0.5 pr-3 pl-3">
+                          <p className="text-[10px] text-muted-foreground truncate">{user.name}</p>
+                        </div>
+                        <div className="flex-1 relative h-4">
+                          {slots.map((slotFte, si) => {
+                            if (slotFte.ftePercent === 0) return null;
+                            const status = getBandwidthStatus(slotFte.ftePercent);
+                            const bandStyle = getBarStyle(slotFte.slot.start, slotFte.slot.end);
+                            return (
+                              <Tooltip key={si}>
+                                <TooltipTrigger asChild>
+                                  <div
+                                    className={`absolute top-0.5 h-3 rounded-sm ${BANDWIDTH_COLORS[status]} cursor-default`}
+                                    style={bandStyle}
+                                  />
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs">
+                                  <p className="font-medium">{user.name}</p>
+                                  <p className="text-muted-foreground">{slotFte.slot.label}</p>
+                                  <p>{Math.round(slotFte.ftePercent)}% FTE · {Math.round(slotFte.committedHours)}h committed</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 );
               })}

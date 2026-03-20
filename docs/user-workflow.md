@@ -146,7 +146,7 @@ The dashboard is the daily landing page. It shows:
 
 - **KPI cards** — active projects, total team FTE, overallocated members, upcoming deadlines (responsive grid)
 - **Project cards** — status and health at a glance
-- **Unified Gantt** — cross-project timeline with per-member allocation bars (read-only); Gantt rows are clickable and navigate to the project
+- **Unified Gantt** — cross-project timeline (read-only); Gantt rows are clickable and navigate to the project. Click **Bandwidth** in the Gantt header to toggle per-member FTE bands coloured by utilisation (green < 75%, amber 75–89%, orange 90–99%, red ≥ 100%). The Gantt auto-refreshes when tasks or allocations change in another tab.
 - **Team heatmap** — capacity heat across the team over time; columns are clickable to filter
 - **Revenue forecast** — project revenue projection (currency-aware, with FX rates)
 - **Overdue resources** — tasks flagged as overdue; clicking an overdue task navigates directly to the project view. Completed projects are excluded.
