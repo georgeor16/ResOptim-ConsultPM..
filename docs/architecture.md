@@ -1,6 +1,6 @@
 # Architecture — MtB Resource Optimization & PM Tool
 
-_Last updated: 2026-03-15_
+_Last updated: 2026-03-19_
 _Update this file at every commit that changes system structure._
 
 ---

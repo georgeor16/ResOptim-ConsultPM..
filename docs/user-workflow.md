@@ -1,6 +1,6 @@
 # User Workflow — MtB Resource Optimization & PM Tool
 
-_Last updated: 2026-03-16_
+_Last updated: 2026-03-19_
 _This is the onboarding map for new team members. Update after every new or changed feature._
 
 ---
@@ -206,11 +206,31 @@ Recipients open the link and see the proposed changes. No login required.
 
 ### 11. Exporting
 
-Accessible via the **Export panel** on the Dashboard (Gantt export button).
+Accessible via the **Export** button in the Gantt header on the Dashboard or any Project Timeline tab.
 
-- Formats: PDF, PNG, Google Slides, Google Docs
-- Granular filters on what to include
-- Captures the current state of the Gantt view
+**Formats:**
+| Format | Output |
+|---|---|
+| PDF | Landscape A4 with chart + header; downloads directly |
+| PNG | High-res screenshot; downloads directly |
+| Google Slides | Creates a new presentation (or appends a slide to an existing one) with the chart image + FTE allocation table |
+| Google Docs | Creates a new document (or appends to an existing one) with the same content |
+
+**Filters (all formats):**
+- Time period: This Week / This Month / This Quarter / This Half Year / This Year / Custom range
+- Projects (multi-select)
+- Team members (multi-select)
+- Clients (multi-select)
+- Content toggles: FTE % data, member names, financial/margin data, bandwidth overlay, unscheduled tasks
+
+**Google Slides / Docs — first-time setup:**
+1. Select Google Slides or Google Docs format
+2. Click **Connect Google Account** → redirects to Google consent screen
+3. Approve → redirected back; your Google email appears in the panel with a Disconnect option
+4. Choose **Create new** (default) or toggle off to append to an existing file by pasting its document/presentation ID
+5. Click **Export** → file opens in a new tab
+
+_Note: Google export requires the deployment steps in `docs/google-export-setup.md` to be completed first (GCP project + Supabase secrets + Edge Functions deployed)._
 
 ---
 
