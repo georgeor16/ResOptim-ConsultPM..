@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadData, addItem, updateItem, deleteItem, genId } from '@/lib/store';
+import { upsertCalendarProfile } from '@/lib/calendarStore';
 import { checkExternalConflictsAfterChange } from '@/lib/bandwidthConflicts';
 import { showExternalConflictToast } from '@/components/ConflictResolutionSheet';
 import type { AppData, CalendarProfile, User } from '@/lib/types';
@@ -280,7 +281,7 @@ export default function Team() {
               user={data.users.find(u => u.id === calendarUser.id) ?? calendarUser}
               onSave={async (calendar: CalendarProfile) => {
                 const userId = calendarUser.id;
-                await updateItem('users', { ...calendarUser, calendar });
+                await upsertCalendarProfile(userId, calendar);
                 setCalendarUser(null);
                 await refreshUsers();
                 const freshData = await loadData();

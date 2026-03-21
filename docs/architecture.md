@@ -1,6 +1,6 @@
 # Architecture — MtB Resource Optimization & PM Tool
 
-_Last updated: 2026-03-19_
+_Last updated: 2026-03-21_
 _Update this file at every commit that changes system structure._
 
 ---
@@ -50,7 +50,7 @@ Claude Code (Cursor) --> Git Repository --> Notion (via GitHub Action)
 - `tasks`
 - `subtasks`
 - `timelogs`
-- `calendar_profiles`
+- `calendar_profiles` _(migration 014 — was previously a JSON blob on `users`)_
 - `alerts`
 - `simulations`
 - `simulation_templates`
@@ -96,9 +96,10 @@ Claude Code (Cursor) --> Git Repository --> Notion (via GitHub Action)
 - **Real-time updates** — Supabase channel `gantt-live` subscribes to `tasks` and `allocations`; any change triggers a `loadData()` refresh via `onDataRefresh` callback
 
 ### Scheduling Assistant
-- Surfaces unscheduled tasks and suggests optimal assignment
-- Reads calendar profiles for member availability
-- Configurable review cadence; health score chip + toast notifications
+- Surfaces unscheduled tasks grouped by project and phase
+- **Calendar-aware:** loads all member calendar profiles via `calendarStore.getAllCalendarProfiles`; shows inline blackout conflict warnings per assignee when task dates overlap with their blackout dates
+- **Auto-schedule:** walks calendar days from phase start, finds the earliest window where all assignees are available (correct working day + no blackout), counts forward the required working days, assigns start/due dates in bulk
+- Manual date entry still available with FTE preview per task
 
 ### What-If Simulation
 - Sandbox mode: deep-clone of live data, no live writes until Apply
@@ -111,8 +112,11 @@ Claude Code (Cursor) --> Git Repository --> Notion (via GitHub Action)
 - Used for planning conversations and reporting
 
 ### Calendar Profiles
-- Per-member working patterns: timezone, working days, daily hours, blackout dates
-- Used by Scheduling Assistant and FTE calculator to adjust effective availability
+- Per-member working patterns: timezone (IANA), working days, daily hours, blackout dates
+- Stored in dedicated `calendar_profiles` Supabase table (one row per user, `user_id` FK); legacy `users.calendar` blob silently migrated on first read via `src/lib/calendarStore.ts`
+- `isWorkingDay()` uses `Intl.DateTimeFormat('en-US')` with the member's timezone — avoids UTC/local-time mismatch for cross-timezone teams
+- `calendarStore` (`getCalendarProfile`, `upsertCalendarProfile`, `getAllCalendarProfiles`) is the async read/write path; `getMemberCalendar(user)` stays sync for bandwidth/FTE calculations
+- Blackout dates managed via `BlackoutDatePicker` component (react-day-picker multi-select)
 
 ### Export
 - Formats: PDF, PNG, Google Slides, Google Docs (all implemented)

@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarClock, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { AppData, Task, Phase, Project, User } from '@/lib/types';
+import type { AppData, CalendarProfile, Task, Phase, Project, User } from '@/lib/types';
 import { loadData, updateItem } from '@/lib/store';
+import { getAllCalendarProfiles } from '@/lib/calendarStore';
+import { getMemberCalendar, isWorkingDay } from '@/lib/calendar';
 import { cn } from '@/lib/utils';
 import { computeTaskFtePercent } from '@/lib/fte';
 import { getTaskDurationHours, HOURS_PER_DAY } from '@/lib/duration';
@@ -55,13 +58,85 @@ function buildUnscheduled(data: AppData): UnscheduledTaskRow[] {
     .filter((x): x is UnscheduledTaskRow => !!x);
 }
 
-function TaskDateRow({ row, onApply }: { row: UnscheduledTaskRow; onApply: (task: Task, start: string, end: string) => void }) {
+/**
+ * Given a task and its assignees' calendar profiles, find the earliest start date
+ * (from phaseStart) where all assignees are available, then walk forward for the
+ * required number of working days. Returns null if no valid window is found.
+ */
+function autoScheduleTask(
+  task: Task,
+  profiles: Map<string, CalendarProfile>,
+  users: User[],
+  phaseStart: string,
+  phaseEnd: string,
+): { startDate: string; dueDate: string } | null {
+  const hours = getTaskDurationHours(task);
+  const requiredDays = Math.max(1, Math.ceil(hours / HOURS_PER_DAY));
+
+  const assigneeProfiles = users
+    .filter(u => (task.assigneeIds ?? []).includes(u.id))
+    .map(u => profiles.get(u.id) ?? getMemberCalendar(u));
+
+  const start = new Date(phaseStart + 'T00:00:00');
+  const end = new Date(phaseEnd + 'T00:00:00');
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  // Walk through each calendar day to find a valid window
+  for (let t = start.getTime(); t <= end.getTime(); t += dayMs) {
+    const d = new Date(t);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${day}`;
+
+    const allAvailable = assigneeProfiles.every(p => isWorkingDay(p, dateStr));
+    if (!allAvailable) continue;
+
+    // Found candidate start — walk forward requiredDays working days
+    let counted = 0;
+    let endStr = dateStr;
+    for (let t2 = t; t2 <= end.getTime() && counted < requiredDays; t2 += dayMs) {
+      const d2 = new Date(t2);
+      const ds = `${d2.getFullYear()}-${String(d2.getMonth() + 1).padStart(2, '0')}-${String(d2.getDate()).padStart(2, '0')}`;
+      if (assigneeProfiles.every(p => isWorkingDay(p, ds))) {
+        endStr = ds;
+        counted++;
+      }
+    }
+    if (counted === requiredDays) return { startDate: dateStr, dueDate: endStr };
+    // Not enough working days left in phase — skip to next candidate
+  }
+  return null;
+}
+
+function TaskDateRow({
+  row,
+  profiles,
+  onApply,
+}: {
+  row: UnscheduledTaskRow;
+  profiles: Map<string, CalendarProfile>;
+  onApply: (task: Task, start: string, end: string) => void;
+}) {
   const t = row.task;
   const [localStart, setLocalStart] = useState(t.startDate || '');
   const [localEnd, setLocalEnd] = useState(t.dueDate || '');
   const assignees = row.users;
   const hours = getTaskDurationHours(t);
   const fte = hours > 0 && localStart && localEnd ? computeTaskFtePercent(hours, localStart, localEnd) : 0;
+
+  // Compute blackout conflicts for each assignee within the selected date range
+  const blackoutConflicts = useMemo<{ name: string; dates: string[] }[]>(() => {
+    if (!localStart || !localEnd) return [];
+    const conflicts: { name: string; dates: string[] }[] = [];
+    for (const u of assignees) {
+      const profile = profiles.get(u.id) ?? getMemberCalendar(u);
+      const blocked = profile.blackoutDates.filter(d => d >= localStart && d <= localEnd);
+      if (blocked.length > 0) conflicts.push({ name: u.name, dates: blocked });
+    }
+    return conflicts;
+  }, [assignees, profiles, localStart, localEnd]);
+
   return (
     <div className="rounded-md bg-background/60 border border-white/5 px-2 py-1.5 flex flex-col gap-1">
       <div className="flex items-center justify-between gap-2">
@@ -117,6 +192,11 @@ function TaskDateRow({ row, onApply }: { row: UnscheduledTaskRow; onApply: (task
           This will add approximately {fte}% FTE for assigned members over this period.
         </p>
       )}
+      {blackoutConflicts.map(c => (
+        <p key={c.name} className="text-[10px] text-amber-500/90">
+          ⚠ {c.name} has {c.dates.length} blackout date{c.dates.length !== 1 ? 's' : ''} in this range ({c.dates.join(', ')})
+        </p>
+      ))}
     </div>
   );
 }
@@ -136,12 +216,16 @@ export function useUnscheduledCount() {
 export function SchedulingAssistantButton() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [autoScheduling, setAutoScheduling] = useState(false);
   const [data, setData] = useState<AppData | null>(null);
+  const [profiles, setProfiles] = useState<Map<string, CalendarProfile>>(new Map());
 
   const refresh = async () => {
     setLoading(true);
     const d = await loadData();
     setData(d);
+    const p = await getAllCalendarProfiles(d.users);
+    setProfiles(p);
     setLoading(false);
   };
 
@@ -154,6 +238,41 @@ export function SchedulingAssistantButton() {
   const unscheduled = useMemo(() => (data ? buildUnscheduled(data) : []), [data]);
 
   const totalCount = unscheduled.length;
+
+  const handleAutoScheduleAll = async () => {
+    if (!data) return;
+    setAutoScheduling(true);
+    const schedulable = unscheduled.filter(
+      row => row.reason === 'no_task_dates' && !!row.phase?.startDate && !!row.phase?.endDate
+    );
+    const failed: string[] = [];
+    for (const row of schedulable) {
+      const result = autoScheduleTask(
+        row.task,
+        profiles,
+        row.users,
+        row.phase!.startDate!,
+        row.phase!.endDate!,
+      );
+      if (result) {
+        const hours = getTaskDurationHours(row.task);
+        await updateItem('tasks', { ...row.task, ...result, estimatedHours: hours || undefined });
+      } else {
+        failed.push(row.task.title);
+      }
+    }
+    await refresh();
+    setAutoScheduling(false);
+    if (schedulable.length === 0) {
+      toast.info('No tasks could be auto-scheduled. Set phase dates first.');
+    } else if (failed.length === 0) {
+      toast.success(`Auto-scheduled ${schedulable.length} task${schedulable.length !== 1 ? 's' : ''}.`);
+    } else {
+      toast.warning(
+        `Scheduled ${schedulable.length - failed.length} task${schedulable.length - failed.length !== 1 ? 's' : ''}. Could not schedule: ${failed.join(', ')}.`
+      );
+    }
+  };
 
   return (
     <>
@@ -189,8 +308,18 @@ export function SchedulingAssistantButton() {
           </SheetHeader>
           <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2 text-xs">
             <span className="text-muted-foreground/80">Bulk actions:</span>
-            <Button variant="outline" size="xs" disabled className="h-6 px-2 text-[11px]">
-              Auto-schedule all (coming soon)
+            <Button
+              variant="outline"
+              size="xs"
+              disabled={loading || autoScheduling || totalCount === 0}
+              onClick={handleAutoScheduleAll}
+              className="h-6 px-2 text-[11px]"
+            >
+              {autoScheduling ? (
+                <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Scheduling…</>
+              ) : (
+                'Auto-schedule all'
+              )}
             </Button>
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
@@ -207,7 +336,7 @@ export function SchedulingAssistantButton() {
               </div>
             )}
             {!loading && totalCount > 0 && data && (
-              <SchedulingAssistantList data={data} rows={unscheduled} onChanged={refresh} />
+              <SchedulingAssistantList data={data} rows={unscheduled} profiles={profiles} onChanged={refresh} />
             )}
           </div>
         </SheetContent>
@@ -219,10 +348,11 @@ export function SchedulingAssistantButton() {
 interface ListProps {
   data: AppData;
   rows: UnscheduledTaskRow[];
+  profiles: Map<string, CalendarProfile>;
   onChanged: () => Promise<void> | void;
 }
 
-function SchedulingAssistantList({ data, rows, onChanged }: ListProps) {
+function SchedulingAssistantList({ data, rows, profiles, onChanged }: ListProps) {
   const [projectFilter, setProjectFilter] = useState<string | 'all'>('all');
 
   const grouped = useMemo(() => {
@@ -327,7 +457,7 @@ function SchedulingAssistantList({ data, rows, onChanged }: ListProps) {
                     </div>
                     <div className="space-y-1.5">
                       {phaseGroup.tasks.map(row => (
-                        <TaskDateRow key={row.task.id} row={row} onApply={handleApplyTaskDates} />
+                        <TaskDateRow key={row.task.id} row={row} profiles={profiles} onApply={handleApplyTaskDates} />
                       ))}
                     </div>
                   </div>

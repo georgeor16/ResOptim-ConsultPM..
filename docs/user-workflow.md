@@ -1,6 +1,6 @@
 # User Workflow — MtB Resource Optimization & PM Tool
 
-_Last updated: 2026-03-19_
+_Last updated: 2026-03-20_
 _This is the onboarding map for new team members. Update after every new or changed feature._
 
 ---
@@ -238,7 +238,11 @@ _Note: Google export requires the deployment steps in `docs/google-export-setup.
 
 **Route:** `/settings`
 
-- **Calendar profiles** — set per-member working patterns: timezone, working days, daily hours, blackout dates (leave, public holidays). Used by the Scheduling Assistant and FTE calculator to adjust effective availability.
+- **Calendar profiles** — set per-member working patterns via Team page → Calendar icon per member:
+  - **Timezone** — select from 18 IANA zones. Availability calculations use the member's timezone to determine correct day-of-week boundaries.
+  - **Working days** — toggle Mon–Sun.
+  - **Daily / weekly hours** — default 8h/day; optional weekly override for part-time members.
+  - **Blackout dates** — click any day in the interactive calendar to toggle it as a blackout/holiday. Days already marked non-working are greyed out. Saved dates propagate to FTE calculations and the Scheduling Assistant. Used by the Scheduling Assistant and FTE calculator to adjust effective availability.
 - **Currency** — set the base currency; FX rates are fetched and refreshed automatically
 - **Project templates** — create custom phase templates for reuse across new projects
 - **Role taxonomy** — define and manage org-level role names (e.g. Senior Analyst, PM)
@@ -251,7 +255,13 @@ _Note: Google export requires the deployment steps in `docs/google-export-setup.
 
 ## Scheduling Assistant
 
-A slide-in panel (button in the top header) that surfaces unscheduled tasks grouped by project and phase. Users can batch-set phase dates and individual task dates; the panel previews the resulting FTE demand for assigned members. A counter badge on the button shows how many tasks need scheduling. Configurable review cadence determines how often the assistant prompts for a review. Shows a health score and emits toast notifications when scheduling issues are detected.
+A slide-in panel (button in the top header) that surfaces unscheduled tasks grouped by project and phase.
+
+**Manual scheduling:** Enter start/end dates per task. The panel previews the resulting FTE demand for assigned members. If any assignee has a blackout date within the selected range, an inline warning is shown (e.g. "⚠ Alice has 2 blackout dates in this range").
+
+**Auto-schedule all:** Bulk-assigns dates to all tasks in phases that already have dates. The algorithm walks calendar days from the phase start and finds the earliest window where all assignees are available (correct working day, no blackout dates), then counts forward the required working days. Tasks that cannot fit within the phase window are reported in a toast.
+
+A counter badge on the button shows how many tasks need scheduling.
 
 ---
 

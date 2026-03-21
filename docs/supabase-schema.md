@@ -1,6 +1,6 @@
 # Supabase Schema — MtB PM Tool
 
-_Last updated: 2026-03-19_
+_Last updated: 2026-03-20_
 _Update this file immediately when any table, column, or relationship changes._
 
 ---
@@ -94,15 +94,19 @@ _Update this file immediately when any table, column, or relationship changes._
 | created_at | timestamp | Auto-generated |
 
 ### calendar_profiles
+Created in migration 014. One row per user; data previously stored as a JSON blob in `users.calendar`. App layer migrates old blobs on first read.
+
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | Primary key |
-| member_id | uuid | FK → team_members |
-| timezone | text | Member timezone (IANA format) |
-| working_days | text[] | e.g. `["Mon","Tue","Wed","Thu","Fri"]` |
-| daily_hours | numeric | Default 8 |
-| blackout_dates | date[] | Leave, public holidays |
-| created_at | timestamp | Auto-generated |
+| user_id | uuid | FK → users(id) ON DELETE CASCADE; UNIQUE constraint (one profile per user) |
+| timezone | text | IANA timezone string (e.g. `Europe/Paris`); default `UTC` |
+| working_days | jsonb | Array of day numbers 0–6 (0=Sun); default `[1,2,3,4,5]` |
+| daily_working_hours | numeric | Default 8 |
+| weekly_working_hours | numeric | Optional override; null means `workingDays.length × dailyWorkingHours` |
+| blackout_dates | jsonb | Array of `YYYY-MM-DD` strings (leave, public holidays); default `[]` |
+| created_at | timestamptz | Auto-generated |
+| updated_at | timestamptz | Auto-updated via trigger `trg_calendar_profiles_updated_at` |
 
 ### alerts
 | Column | Type | Notes |
@@ -231,11 +235,11 @@ RLS is enabled on all tables. Three roles: `admin` and `manager` (full access to
 | SELECT / INSERT / UPDATE / DELETE | All rows | All rows |
 
 ### `calendar_profiles`
-| Operation | Admin | Member |
-|---|---|---|
-| SELECT | All rows | Own row only (`user_id = auth.uid()`) |
-| INSERT / UPDATE | Allowed | Own row only |
-| DELETE | Allowed | Denied |
+RLS created in migration 014. Mirrors the full-access pattern from migration 012 — all authenticated roles have identical access.
+
+| Operation | All authenticated roles |
+|---|---|
+| SELECT / INSERT / UPDATE / DELETE | All rows |
 
 ### `alerts`
 | Operation | Admin | Member |
@@ -272,6 +276,7 @@ RLS is enabled on all tables. Three roles: `admin` and `manager` (full access to
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-03-20 | Migration 014: calendar_profiles table; RLS full-access (admin/manager/member equal); app-layer backward-compat migration from users.calendar blob on first read | — |
 | 2026-03-19 | Migration 013: user_google_tokens table for Google OAuth token storage (Slides/Docs export) | — |
 | 2026-03-16 | Migration 012: member full access on users, timelogs, alerts — all three tables now identical to admin/manager | — |
 | 2026-03-16 | Added auth_id column to users table (migration 011); updated get_my_role() to resolve by auth_id | — |

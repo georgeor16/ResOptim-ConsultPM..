@@ -32,10 +32,36 @@ export function getMemberCalendar(user: User): CalendarProfile {
   return getDefaultCalendarProfile();
 }
 
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+/**
+ * Returns the day-of-week (0=Sun…6=Sat) for a YYYY-MM-DD string interpreted in the
+ * given IANA timezone. Falls back to local JS timezone if the timezone is invalid.
+ */
+export function getDayOfWeekInTimezone(dateStr: string, timezone: string): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    // Try UTC noon first (works for UTC-12 to UTC+11).
+    // UTC+12/+13 (e.g. Auckland NZDT) land on the next calendar day at noon,
+    // so we verify the formatted date matches and fall back to UTC midnight if not.
+    for (const utcHour of [12, 0, 18]) {
+      const utcDate = new Date(Date.UTC(y, m - 1, d, utcHour, 0, 0));
+      const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(utcDate);
+      if (localDate === dateStr) {
+        const weekdayStr = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'long' }).format(utcDate);
+        const idx = DAY_NAMES.indexOf(weekdayStr);
+        if (idx !== -1) return idx as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+      }
+    }
+  } catch {
+    // fall through to local fallback
+  }
+  return new Date(dateStr + 'T12:00:00').getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+}
+
 /** Check if a date (YYYY-MM-DD) is a working day for the profile (weekday + not blackout). */
 export function isWorkingDay(profile: CalendarProfile, dateStr: string): boolean {
-  const d = new Date(dateStr + 'T12:00:00');
-  const day = d.getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  const day = getDayOfWeekInTimezone(dateStr, profile.timezone);
   if (!profile.workingDays.includes(day)) return false;
   if (profile.blackoutDates.includes(dateStr)) return false;
   return true;

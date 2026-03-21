@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import type { CalendarProfile, User, WorkingDay } from '@/lib/types';
 import { getDefaultCalendarProfile } from '@/lib/calendar';
+import { BlackoutDatePicker } from '@/components/BlackoutDatePicker';
 import { cn } from '@/lib/utils';
 
 const DAY_LABELS: { value: WorkingDay; label: string }[] = [
@@ -20,12 +21,21 @@ const COMMON_TIMEZONES = [
   'UTC',
   'Europe/London',
   'Europe/Paris',
+  'Europe/Berlin',
+  'Europe/Moscow',
   'America/New_York',
+  'America/Chicago',
+  'America/Denver',
   'America/Los_Angeles',
+  'America/Sao_Paulo',
+  'Africa/Johannesburg',
   'Asia/Dubai',
+  'Asia/Kolkata',
   'Asia/Singapore',
+  'Asia/Shanghai',
   'Asia/Tokyo',
   'Australia/Sydney',
+  'Pacific/Auckland',
 ];
 
 interface CalendarProfileEditorProps {
@@ -40,7 +50,7 @@ export function CalendarProfileEditor({ user, onSave, className }: CalendarProfi
   const [workingDays, setWorkingDays] = useState<WorkingDay[]>(profile.workingDays?.length ? [...profile.workingDays] : [1, 2, 3, 4, 5]);
   const [dailyWorkingHours, setDailyWorkingHours] = useState(profile.dailyWorkingHours ?? 8);
   const [weeklyOverride, setWeeklyOverride] = useState(profile.weeklyWorkingHours?.toString() ?? '');
-  const [blackoutRaw, setBlackoutRaw] = useState((profile.blackoutDates ?? []).join(', '));
+  const [blackoutDates, setBlackoutDates] = useState<string[]>(profile.blackoutDates ?? []);
 
   const toggleDay = (d: WorkingDay) => {
     setWorkingDays(prev =>
@@ -50,10 +60,6 @@ export function CalendarProfileEditor({ user, onSave, className }: CalendarProfi
 
   const handleSave = () => {
     const weekly = weeklyOverride.trim() ? parseFloat(weeklyOverride) : undefined;
-    const blackoutDates = blackoutRaw
-      .split(/[\s,]+/)
-      .map(s => s.trim())
-      .filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s));
     onSave({
       timezone,
       workingDays,
@@ -124,13 +130,14 @@ export function CalendarProfileEditor({ user, onSave, className }: CalendarProfi
         </div>
       </div>
       <div>
-        <Label className="text-xs">Blackout / holidays (YYYY-MM-DD, comma-separated)</Label>
-        <Input
-          placeholder="e.g. 2026-12-25, 2026-01-01"
-          value={blackoutRaw}
-          onChange={e => setBlackoutRaw(e.target.value)}
-          className="mt-1"
-        />
+        <Label className="text-xs">Blackout / holidays</Label>
+        <div className="mt-1">
+          <BlackoutDatePicker
+            blackoutDates={blackoutDates}
+            onChange={setBlackoutDates}
+            workingDays={workingDays}
+          />
+        </div>
       </div>
       <Button size="sm" onClick={handleSave} className="bg-accent text-accent-foreground hover:bg-accent/90">
         Save calendar

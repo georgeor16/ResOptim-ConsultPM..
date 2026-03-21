@@ -1,6 +1,6 @@
 # Decision Log — MtB PM Tool
 
-_Last updated: 2026-03-19_
+_Last updated: 2026-03-20_
 _Log every meaningful architectural or product decision here. Include tradeoffs._
 
 ---
@@ -104,6 +104,29 @@ _Log every meaningful architectural or product decision here. Include tradeoffs.
 - **Why:** Keeping refresh tokens server-side prevents token theft via XSS. The `google-export` function auto-refreshes expired tokens before calling the Google API, so the client never needs to manage token lifecycle.
 - **Tradeoffs:** Two extra Edge Functions to deploy and maintain; Google API rate limit errors surface as Edge Function 502 responses. Token refresh is synchronous-in-line which adds ~200ms latency when a refresh is needed.
 - **Alternatives considered:** Client-side PKCE with tokens in localStorage — rejected (tokens exposed to XSS); client-side PKCE with tokens in Supabase — rejected (client still handles the exchange, refresh token written from client context which is avoidable)
+
+---
+
+### Calendar profiles: dedicated Supabase table (not users.calendar blob)
+- **Date:** 2026-03-20
+- **What:** Calendar data moved from a JSON blob column `users.calendar` (implicit, never formally migrated) into a dedicated `calendar_profiles` table (migration 014) with `user_id` FK and typed columns.
+- **Why:** Blob approach was not queryable, had no audit trail (`updated_at`), and made schema documentation misleading. A dedicated table enables per-profile querying, `ON DELETE CASCADE` cleanup, and a clean `updated_at` trigger.
+- **Tradeoffs:** Backward-compat layer required — `getMemberCalendar(user)` still reads from `user.calendar` as a sync fallback for bandwidth/FTE calcs; async callers use `calendarStore`. Old blobs are silently migrated on first read via `getCalendarProfile`.
+- **Alternatives considered:** Keep blob, add formal column to users migration — rejected (still unqueryable, schema noise)
+
+### Calendar profiles: Intl.DateTimeFormat for timezone-aware day-of-week
+- **Date:** 2026-03-20
+- **What:** `isWorkingDay()` now resolves the day-of-week using `Intl.DateTimeFormat` with `weekday: 'long'` in the member's IANA timezone, replacing the previous `new Date(str + 'T12:00:00').getDay()` which used the browser's local timezone.
+- **Why:** A consulting team member in Tokyo with Mon–Fri working days would have their Monday/Friday boundary calculated in the server/browser's timezone (often UTC), silently miscounting available hours for cross-timezone teams.
+- **Tradeoffs:** `Intl.DateTimeFormat` with `weekday: 'long'` returns locale-specific strings — the implementation uses `'en-US'` locale explicitly to ensure consistent English day names. Falls back to local `.getDay()` if the timezone string is invalid.
+- **Alternatives considered:** `date-fns-tz` library — rejected to avoid a new dependency since `Intl` is universally available
+
+### Calendar profiles: react-day-picker for blackout date picker
+- **Date:** 2026-03-20
+- **What:** Blackout date UI uses `DayPicker` from `react-day-picker` v8 in multi-select mode, replacing the comma-separated text input.
+- **Why:** `react-day-picker` was already installed as a dependency of `ui/calendar.tsx` — zero new bundle cost. Multi-select mode with `onDayClick` toggle is a 30-line implementation.
+- **Tradeoffs:** Non-working days (per the member's workingDays setting) are greyed out but still clickable — could confuse users into blacking out already-non-working days, but these are harmless duplicates.
+- **Alternatives considered:** Custom grid from scratch — more work, no benefit; `react-datepicker` — another dep; keep text input — poor UX for non-technical users
 
 ---
 
