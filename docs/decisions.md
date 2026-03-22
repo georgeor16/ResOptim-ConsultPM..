@@ -130,6 +130,15 @@ _Log every meaningful architectural or product decision here. Include tradeoffs.
 
 ---
 
+### updateItem must mirror the addItem write-through pattern (bug fix)
+- **Date:** 2026-03-22
+- **What:** `updateItem` in `src/lib/store.ts` now always writes the updated item to localStorage before (and regardless of) the Supabase call. Previously it called Supabase first and returned early on success, never touching localStorage.
+- **Why:** Supabase's `.update().eq('id', ...)` returns no error even when zero rows matched (e.g. a task created locally that was never synced). The early-return path left localStorage with the old value. On the next `loadData()`, `loadFromSupabase` merged the stale localStorage row back in, reverting any change — visibly: status dropdown selections silently snapped back to the old value.
+- **Tradeoffs:** localStorage is now always written even when Supabase holds the authoritative copy. This is a harmless O(n) write — it keeps the mirror consistent and ensures no update is silently lost.
+- **Alternatives considered:** Check Supabase `count` to detect zero-row updates and fall through to localStorage only then — rejected as more complex and still racy. Fixing the merge logic in `loadFromSupabase` to not clobber Supabase data with localStorage — rejected; the merge is the safety net for items that never made it to Supabase on create.
+
+---
+
 ### Delete must mirror the addItem write-through pattern (bug fix)
 - **Date:** 2026-03-21
 - **What:** `deleteItem` and `deleteProject` in `src/lib/store.ts` now always clean localStorage after a Supabase delete, not only on fallback. Previously both functions returned early on Supabase success, leaving the deleted item in the localStorage mirror.

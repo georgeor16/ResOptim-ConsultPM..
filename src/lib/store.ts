@@ -177,19 +177,24 @@ export async function addItem<T extends { id: string }>(key: keyof AppData, item
   }
 }
 
-/** Update one row by id. */
+/** Update one row by id. Always mirrors to localStorage so updates are never silently lost. */
 export async function updateItem<T extends { id: string }>(key: keyof AppData, item: T): Promise<void> {
+  // Always update localStorage as a reliable mirror first.
+  const localData = loadFromLocalSync();
+  const arr = localData[key] as unknown as T[];
+  const idx = arr.findIndex(i => i.id === item.id);
+  if (idx !== -1) {
+    arr[idx] = item;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
+  }
+
   if (supabase) {
     const row = appToRow(item as unknown as Record<string, unknown>);
     const { error } = await supabase.from(getTable(key)).update(row).eq('id', item.id);
-    if (!error) return;
-    console.error(`Supabase update ${key} failed, falling back to local storage:`, error);
+    if (error) {
+      console.error(`Supabase update ${key} failed:`, error);
+    }
   }
-  const data = loadFromLocalSync();
-  const arr = data[key] as unknown as T[];
-  const idx = arr.findIndex(i => i.id === item.id);
-  if (idx !== -1) arr[idx] = item;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
 /** Delete one row by id. */

@@ -1,6 +1,6 @@
 # Architecture — MtB Resource Optimization & PM Tool
 
-_Last updated: 2026-03-21_
+_Last updated: 2026-03-22_
 _Update this file at every commit that changes system structure._
 
 ---
@@ -233,6 +233,7 @@ See `docs/supabase-schema.md` → RLS Rules for the full per-table policy breakd
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-03-22 | Bug fix: `updateItem` now always mirrors to localStorage before Supabase (same pattern as `addItem`); `handleStatusChange` gets an optimistic UI update so task status dropdowns reflect selection immediately | — |
 | 2026-03-19 | Export: Google Slides + Google Docs integration — server-side OAuth via Edge Functions, user_google_tokens table (migration 013), chart screenshot + allocation table export | — |
 | 2026-03-19 | Gantt: bandwidth overlay toggle (per-member FTE bands) + Supabase realtime subscription on tasks + allocations | — |
 | 2026-03-16 | Removed all member access restrictions: migration 012 + 11 frontend files updated; all roles now identical | — |

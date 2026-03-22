@@ -1,6 +1,6 @@
 # User Workflow — MtB Resource Optimization & PM Tool
 
-_Last updated: 2026-03-20_
+_Last updated: 2026-03-22_
 _This is the onboarding map for new team members. Update after every new or changed feature._
 
 ---
@@ -314,6 +314,32 @@ Row-level security (RLS) is enforced at the database layer for all tables. Role 
 | Delete timelogs / alerts | Yes | Yes |
 
 Share links (`/simulation/review/:shareId`) are accessible without login — the server validates the token server-side.
+
+---
+
+## Notion sync
+
+Notion is the stakeholder-facing layer. The Git repo is the source of truth. A GitHub Action (`notion-sync.yml`) runs on every push to `main` that includes a change to `docs/**/*.md` and syncs the relevant doc to its mapped Notion page.
+
+### Session summaries — prepend behaviour
+
+Session summaries in Notion are **prepended**, not replaced. Each push adds the new session entry above all existing ones. The sync script extracts only the added lines from the git diff and converts them to richly-formatted Notion blocks — it does not clear the page.
+
+**Notion block format for each entry:**
+
+| Markdown element | Notion output |
+|---|---|
+| `## Session — YYYY-MM-DD (title)` | Paragraph — bold "Session — " + date mention + title |
+| `- **Built:**`, `- **Changed:**`, etc. | Paragraph with `underline: true` annotation |
+| Bullet body content | `bulleted_list_item` blocks |
+| Inline backtick spans (`` `file.ts` ``) | `rich_text` with `code: true` annotation |
+| `- **Next session:** ...` | `to_do` block, `checked: false` |
+| `  - sub-item` (2-space indent) | `bulleted_list_item` |
+| `---` | Divider block |
+
+All other doc files (architecture, decisions, etc.) use the standard clear-and-rewrite sync.
+
+**To push a session summary to Notion:** add a new `## Session — YYYY-MM-DD (title)` entry at the top of `docs/session-summaries.md`, commit, and push to `main`. The Action handles the rest.
 
 ---
 

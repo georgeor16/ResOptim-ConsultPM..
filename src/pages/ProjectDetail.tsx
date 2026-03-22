@@ -862,6 +862,7 @@ export default function ProjectDetail() {
 
   const handleStatusChange = async (task: Task, status: TaskStatus) => {
     const wasDone = task.status === 'Done';
+    setData(d => d ? { ...d, tasks: d.tasks.map(t => t.id === task.id ? { ...t, status } : t) } : d);
     await updateItem('tasks', { ...task, status });
     if (!wasDone && status === 'Done') {
       logActivityEvent({
