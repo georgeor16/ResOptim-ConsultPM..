@@ -4,6 +4,18 @@ _Paste end-of-session summaries here. Most recent at the top._
 
 ---
 
+## Session — 2026-03-22 (Status dropdown bug fix)
+
+- **Fixed:** Task status dropdown in project task rows was silently reverting to the old value after every selection — clicking an option appeared to do nothing.
+- **Root cause:** `updateItem` in `src/lib/store.ts` returned early after a successful Supabase call, never updating the localStorage mirror. Supabase returns no error even when zero rows match (task not yet synced), so localStorage was left with the old status. On the next `loadData()`, the stale localStorage row was merged back in, overwriting the Supabase result.
+- **Changed:** `src/lib/store.ts` — `updateItem` now always writes to localStorage first, then fires the Supabase call (mirrors the `addItem` write-through pattern).
+- **Changed:** `src/pages/ProjectDetail.tsx` — `handleStatusChange` now does an optimistic `setData` update immediately so the dropdown reflects the selection without waiting for the async round-trip.
+- **Decisions made:** `updateItem` must mirror `addItem` — always write localStorage, then Supabase. Logged in `docs/decisions.md`.
+- **Open questions:** CSV export still unresolved. Google export deployment still on hold.
+- **Next session:** Run deployment steps from `docs/google-export-setup.md` and smoke-test Google Slides / Docs export end-to-end.
+
+---
+
 ## Session — 2026-03-21 (Delete bug fix)
 
 - **Built:** Fix for project and task deletion — deleted items were reappearing after every page refresh. The confirmation dialog closed correctly but items came back immediately on reload.
