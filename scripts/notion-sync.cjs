@@ -31,6 +31,91 @@ function markdownToNotionBlocks(markdown) {
   return blocks;
 }
 
+// Parses text with backtick code spans into a Notion rich_text array
+function parseInlineMarkdown(text) {
+  const richText = [];
+  const parts = text.split(/(`[^`]+`)/);
+  for (const part of parts) {
+    if (part.startsWith("`") && part.endsWith("`")) {
+      richText.push({ type: "text", text: { content: part.slice(1, -1) }, annotations: { code: true } });
+    } else if (part) {
+      richText.push({ type: "text", text: { content: part } });
+    }
+  }
+  return richText;
+}
+
+// Converts new session markdown lines to richly-formatted Notion blocks
+function parseSessionBlocks(newMarkdown) {
+  const blocks = [];
+  const lines = newMarkdown.split("\n");
+
+  for (const line of lines) {
+    // Title: ## Session — 2026-03-21 (optional title)
+    const titleMatch = line.match(/^## Session — (\d{4}-\d{2}-\d{2})(.*)/);
+    if (titleMatch) {
+      const date = titleMatch[1];
+      const suffix = titleMatch[2].trim();
+      blocks.push({
+        object: "block", type: "paragraph",
+        paragraph: {
+          rich_text: [
+            { type: "text", text: { content: "Session \u2014 " }, annotations: { bold: true } },
+            { type: "mention", mention: { type: "date", date: { start: date } } },
+            ...(suffix ? [{ type: "text", text: { content: " " + suffix } }] : [])
+          ]
+        }
+      });
+      continue;
+    }
+
+    // Section header: - **Built:** content
+    const sectionMatch = line.match(/^- \*\*(.+?):\*\*\s*(.*)/);
+    if (sectionMatch) {
+      const header = sectionMatch[1];
+      const content = sectionMatch[2].trim();
+
+      blocks.push({
+        object: "block", type: "paragraph",
+        paragraph: {
+          rich_text: [{ type: "text", text: { content: header + ":" }, annotations: { underline: true } }]
+        }
+      });
+
+      if (content) {
+        if (header === "Next session") {
+          blocks.push({ object: "block", type: "to_do", to_do: { rich_text: parseInlineMarkdown(content), checked: false } });
+        } else {
+          blocks.push({ object: "block", type: "bulleted_list_item", bulleted_list_item: { rich_text: parseInlineMarkdown(content) } });
+        }
+      }
+      continue;
+    }
+
+    // Sub-item (2+ space indent): "  - content"
+    const subItemMatch = line.match(/^\s{2,}- (.+)/);
+    if (subItemMatch) {
+      blocks.push({ object: "block", type: "bulleted_list_item", bulleted_list_item: { rich_text: parseInlineMarkdown(subItemMatch[1]) } });
+      continue;
+    }
+
+    if (line.trim() === "---") {
+      blocks.push({ object: "block", type: "divider", divider: {} });
+    }
+  }
+
+  return blocks;
+}
+
+function getNewSessionLines() {
+  const diff = execSync("git diff HEAD~1 HEAD -- docs/session-summaries.md").toString();
+  return diff
+    .split("\n")
+    .filter(line => line.startsWith("+") && !line.startsWith("+++"))
+    .map(line => line.slice(1))
+    .join("\n");
+}
+
 function heading(text, level) {
   const type = `heading_${level}`;
   return { object: "block", type, [type]: { rich_text: [{ type: "text", text: { content: text } }] } };
@@ -53,6 +138,20 @@ async function clearPage(pageId) {
   for (const block of results) {
     await notion.blocks.delete({ block_id: block.id });
   }
+}
+
+async function getPageBlocks(pageId) {
+  const { results } = await notion.blocks.children.list({ block_id: pageId });
+  return results;
+}
+
+async function prependToNotion(pageId, newBlocks, existingBlocks) {
+  for (const block of existingBlocks) {
+    await notion.blocks.delete({ block_id: block.id });
+  }
+  await pushToNotion(pageId, newBlocks);
+  const oldBlocks = existingBlocks.map(b => ({ object: b.object, type: b.type, [b.type]: b[b.type] }));
+  await pushToNotion(pageId, oldBlocks);
 }
 
 async function pushToNotion(pageId, blocks) {
@@ -82,10 +181,21 @@ async function main() {
       continue;
     }
     const markdown = fs.readFileSync(filePath, "utf8");
-    const blocks = markdownToNotionBlocks(markdown);
     console.log(`Syncing ${docKey} → Notion page ${pageId}`);
-    await clearPage(pageId);
-    await pushToNotion(pageId, blocks);
+    if (docKey === "session-summaries") {
+      const newMarkdown = getNewSessionLines();
+      if (!newMarkdown.trim()) {
+        console.log("No new session content detected — skipping prepend.");
+        continue;
+      }
+      const newBlocks = parseSessionBlocks(newMarkdown);
+      const existingBlocks = await getPageBlocks(pageId);
+      await prependToNotion(pageId, newBlocks, existingBlocks);
+    } else {
+      const blocks = markdownToNotionBlocks(markdown);
+      await clearPage(pageId);
+      await pushToNotion(pageId, blocks);
+    }
     console.log(`✅  Synced: ${docKey}`);
   }
 }
