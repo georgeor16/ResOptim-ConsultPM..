@@ -1,6 +1,6 @@
 # FTE % & Bandwidth — Feature Doc
 
-_Last updated: 2026-03-15_
+_Last updated: 2026-03-21_
 
 ---
 
@@ -8,12 +8,14 @@ _Last updated: 2026-03-15_
 Core allocation engine. Tracks FTE% per member per project and warns on overallocation.
 
 ## Behaviour
-- Duration unit dropdown with automatic FTE% derivation
-- Month as base unit
-- Multi-period FTE% view toggle (Week/Month/Quarter/Half Year/Year)
+- FTE% allocation per member per project; month is base unit
+- **Multi-period view toggle:** Week / Month / Quarter / Half Year / Year across Resource Allocation and Bandwidth views
+- **Automatic FTE% derivation:** derived from task effort and duration (duration unit dropdown: hours, days, weeks, month)
+- **projectSharePercent:** member's share of a project drives FTE% as `share × project FTE demand ÷ 100`
 - Warning thresholds: green <75%, amber 75–89%, orange 90–99%, red/pulsing 100%+
-- Task completion marking with automatic FTE% release
+- Task completion triggers automatic FTE% release for that period
+- Conflict resolution sheet surfaces automatically when a change causes overallocation
 
 ## Status
-**Stage:** MVP done
-Core FTE% allocation and overallocation warnings working end-to-end. Multi-period view toggle (Week/Month/Quarter/Half Year/Year) and automatic FTE% derivation from task duration still in progress.
+**Stage:** Complete
+All features shipped: core allocation, overallocation warnings, multi-period toggle, automatic FTE% derivation from task duration, conflict resolution panel.

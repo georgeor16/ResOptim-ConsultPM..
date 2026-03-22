@@ -4,6 +4,17 @@ _Paste end-of-session summaries here. Most recent at the top._
 
 ---
 
+## Session — 2026-03-21 (Delete bug fix)
+
+- **Built:** Fix for project and task deletion — deleted items were reappearing after every page refresh. The confirmation dialog closed correctly but items came back immediately on reload.
+- **Changed:** `src/lib/store.ts` — `deleteItem` and `deleteProject` now always clean the localStorage mirror after a Supabase delete, not only on Supabase failure. Removed two early-return exits that were skipping the localStorage cleanup block.
+- **Changed:** `docs/decisions.md` — new entry documenting the write-through mirror pattern for deletes.
+- **Decisions made:** Delete must mirror `addItem`'s write-through pattern (both Supabase + localStorage). Root cause: `loadFromSupabase` merges any localStorage row absent from Supabase back into state on every load — Supabase-only deletes were silently undone. Kept the merge logic intact as it protects items that failed to sync on create.
+- **Open questions:** CSV export still unresolved. Google export deployment still on hold.
+- **Next session:** Run deployment steps from `docs/google-export-setup.md` and smoke-test Google Slides / Docs export end-to-end.
+
+---
+
 ## Session — 2026-03-19 (Google Export)
 
 - **Built:** Google Slides + Google Docs export integration — full OAuth 2.0 flow server-side via Supabase Edge Functions; refresh tokens never touch the client
