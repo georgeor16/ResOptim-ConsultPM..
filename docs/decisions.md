@@ -1,6 +1,6 @@
 # Decision Log — MtB PM Tool
 
-_Last updated: 2026-03-20_
+_Last updated: 2026-03-21_
 _Log every meaningful architectural or product decision here. Include tradeoffs._
 
 ---
@@ -127,6 +127,15 @@ _Log every meaningful architectural or product decision here. Include tradeoffs.
 - **Why:** `react-day-picker` was already installed as a dependency of `ui/calendar.tsx` — zero new bundle cost. Multi-select mode with `onDayClick` toggle is a 30-line implementation.
 - **Tradeoffs:** Non-working days (per the member's workingDays setting) are greyed out but still clickable — could confuse users into blacking out already-non-working days, but these are harmless duplicates.
 - **Alternatives considered:** Custom grid from scratch — more work, no benefit; `react-datepicker` — another dep; keep text input — poor UX for non-technical users
+
+---
+
+### Delete must mirror the addItem write-through pattern (bug fix)
+- **Date:** 2026-03-21
+- **What:** `deleteItem` and `deleteProject` in `src/lib/store.ts` now always clean localStorage after a Supabase delete, not only on fallback. Previously both functions returned early on Supabase success, leaving the deleted item in the localStorage mirror.
+- **Why:** `addItem` intentionally writes to both Supabase and localStorage ("so the item is never lost"). `loadFromSupabase` merges any localStorage row not present in Supabase back into the result on every load. Because deletes only removed from Supabase, deleted projects and tasks immediately reappeared after the next refresh — the confirmation dialog would close but the item would still be visible.
+- **Tradeoffs:** localStorage is always cleaned after a delete even if it's a no-op (item wasn't there). This is harmless — a filter over an empty array is O(n) at worst and always leaves state consistent.
+- **Alternatives considered:** Remove the localStorage merge in `loadFromSupabase` entirely — rejected; the merge is the safety net for items that failed to sync to Supabase on create (e.g. schema mismatch), and removing it would silently lose those items on next load.
 
 ---
 

@@ -196,8 +196,10 @@ export async function updateItem<T extends { id: string }>(key: keyof AppData, i
 export async function deleteItem(key: keyof AppData, id: string): Promise<void> {
   if (supabase) {
     const { error } = await supabase.from(getTable(key)).delete().eq('id', id);
-    if (!error) return;
-    console.error(`Supabase delete ${key} failed, falling back to local storage:`, error);
+    if (error) {
+      console.error(`Supabase delete ${key} failed, falling back to local storage:`, error);
+    }
+    // Always fall through to clean localStorage mirror (addItem writes to both stores)
   }
   const data = loadFromLocalSync();
   const arr = data[key] as unknown as { id: string }[];
@@ -212,7 +214,7 @@ export async function deleteProject(projectId: string): Promise<void> {
   if (supabase) {
     const { error } = await supabase.from('projects').delete().eq('id', projectId);
     if (error) throw new Error(`Supabase deleteProject: ${error.message}`);
-    return;
+    // Always fall through to clean localStorage mirror (addItem writes to both stores)
   }
   const data = loadFromLocalSync();
   const projectTasks = data.tasks.filter(t => t.projectId === projectId);
