@@ -1,6 +1,6 @@
 # User Workflow — MtB Resource Optimization & PM Tool
 
-_Last updated: 2026-03-22_
+_Last updated: 2026-04-08_
 _This is the onboarding map for new team members. Update after every new or changed feature._
 
 ---
@@ -244,6 +244,7 @@ _Note: Google export requires the deployment steps in `docs/google-export-setup.
   - **Daily / weekly hours** — default 8h/day; optional weekly override for part-time members.
   - **Blackout dates** — click any day in the interactive calendar to toggle it as a blackout/holiday. Days already marked non-working are greyed out. Saved dates propagate to FTE calculations and the Scheduling Assistant. Used by the Scheduling Assistant and FTE calculator to adjust effective availability.
 - **Currency** — set the base currency; FX rates are fetched and refreshed automatically
+- **Integrations** — placeholder card for Google Calendar, Google Drive, Slack, and related connectors; connection options will ship here when available. Google Slides/Docs export is configured from **Export**, not this card (see **Deployment and hosting** below for how production hosting relates to env vars and integrations).
 - **Project templates** — create custom phase templates for reuse across new projects
 - **Role taxonomy** — define and manage org-level role names (e.g. Senior Analyst, PM)
 - **Skill taxonomy** — define and manage org-level skill tags
@@ -353,3 +354,13 @@ All other doc files (architecture, decisions, etc.) use the standard clear-and-r
 Core tables (Supabase): `users`, `projects`, `allocations`, `phases`, `tasks`, `subtasks`, `timelogs`, `alerts`, `simulations`, `simulation_templates`, `scheduling_config`
 
 Org/team/taxonomy metadata always stays in `localStorage` even when Supabase is active.
+
+---
+
+## Deployment and hosting
+
+For anyone using a shared production or staging URL (or setting one up):
+
+- The UI is a **static SPA** built with Vite (`npm run build`). It is deployed to a **CDN-capable host** (for example **Vercel** or **Netlify**) connected to this Git repo, not to a separate low-code preview environment.
+- Configure the same **`VITE_*` variables** the build expects in the host’s project settings—at minimum `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` so the app uses Supabase in production (see **Data persistence** above). Other optional client keys (e.g. monitoring) follow the same pattern.
+- **Settings → Integrations** is only a **placeholder** for future Google Calendar, Google Drive, Slack, and similar connectors. It does **not** configure Google Slides/Docs export; that flow lives under **Export** (OAuth via Supabase Edge Functions, per `docs/google-export-setup.md` when applicable).

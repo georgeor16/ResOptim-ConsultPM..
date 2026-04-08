@@ -1,6 +1,6 @@
 # Decision Log — MtB PM Tool
 
-_Last updated: 2026-03-21_
+_Last updated: 2026-04-08_
 _Log every meaningful architectural or product decision here. Include tradeoffs._
 
 ---
@@ -17,6 +17,13 @@ _Log every meaningful architectural or product decision here. Include tradeoffs.
 ---
 
 ## Decisions
+
+### Remove Lovable dev tooling from the build
+- **Date:** 2026-04-08
+- **What:** Removed the `lovable-tagger` package and its Vite plugin (component tagger in development only). Hosting is documented as a standard static SPA deploy (e.g. Vercel/Netlify), not a Lovable-managed preview.
+- **Why:** The tagger only supports an external IDE workflow and is unnecessary for local Cursor development and CI builds; removing it avoids implying the app is still tied to Lovable infrastructure.
+- **Tradeoffs:** No automated component tagging in `vite dev` for tools that consumed that metadata.
+- **Alternatives considered:** Keep the plugin — rejected as dead weight and confusing for contributors.
 
 ### Gantt chart is read-only
 - **Date:** 2026-03-13

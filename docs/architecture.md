@@ -1,6 +1,6 @@
 # Architecture — MtB Resource Optimization & PM Tool
 
-_Last updated: 2026-03-22_
+_Last updated: 2026-04-08_
 _Update this file at every commit that changes system structure._
 
 ---
@@ -190,6 +190,7 @@ Responsibilities:
 | Layer | Tool |
 |---|---|
 | Frontend | React 18 + TypeScript + Vite |
+| Hosting | Static SPA (`vite build`) on a CDN-capable host (e.g. Vercel, Netlify) |
 | Routing | React Router v6 |
 | Backend / DB | Supabase (PostgreSQL) |
 | Auth | Supabase Auth |
@@ -233,6 +234,7 @@ See `docs/supabase-schema.md` → RLS Rules for the full per-table policy breakd
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-04-08 | Removed Lovable-specific dev tooling (`lovable-tagger` Vite plugin) and user-facing "Lovable Cloud" copy; documented static hosting for the SPA | — |
 | 2026-03-22 | Bug fix: `updateItem` now always mirrors to localStorage before Supabase (same pattern as `addItem`); `handleStatusChange` gets an optimistic UI update so task status dropdowns reflect selection immediately | — |
 | 2026-03-19 | Export: Google Slides + Google Docs integration — server-side OAuth via Edge Functions, user_google_tokens table (migration 013), chart screenshot + allocation table export | — |
 | 2026-03-19 | Gantt: bandwidth overlay toggle (per-member FTE bands) + Supabase realtime subscription on tasks + allocations | — |
